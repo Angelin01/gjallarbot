@@ -11,3 +11,6 @@ target/
 # RustRover
 # We have nothing interesting to add from .idea yet, so don't add it
 .idea/
+
+# Running the bot locally will generate this file
+config.json
