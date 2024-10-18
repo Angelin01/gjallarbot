@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use poise::{serenity_prelude as serenity, CreateReply};
 use serenity::{ActivityData, CreateEmbed};
 
-mod persistent_data;
-mod wake_on_lan;
+mod services;
+mod data;
+mod commands;
 
 #[derive(Deserialize, Serialize)]
 struct State {
@@ -38,7 +39,7 @@ pub async fn register(ctx: Context<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() {
 	let token = match std::env::var("DISCORD_TOKEN") {
 		Ok(token) => token,
