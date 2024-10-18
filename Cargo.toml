@@ -10,8 +10,10 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.89"
 log = "0.4.22"
+poise = "0.6.1"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
+tokio = { version = "1.40.0", features = ["macros", "rt"] }
 
 [profile.release]
 strip = "debuginfo"
