@@ -13,4 +13,4 @@ target/
 .idea/
 
 # Running the bot locally will generate this file
-config.json
+data.json

@@ -1,32 +1,28 @@
 #![feature(trait_alias)]
 
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
+use log::{error, info};
 
-mod persistent_data;
-mod wake_on_lan;
+mod services;
+mod data;
+mod commands;
+mod bot;
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-struct Config {
-	setting1: String,
-	setting2: u32,
-}
+#[tokio::main]
+async fn main() -> Result<()> {
+	env_logger::init();
 
-fn main() {
-	let mac =  "D8:43:AE:57:B4:1D";
-	let magic_packet = wake_on_lan::MagicPacket::from_string(mac).unwrap();
-	wake_on_lan::send(&magic_packet).unwrap();
+	let token = match std::env::var("GJ_DISCORD_TOKEN") {
+		Ok(token) => token,
+		Err(e) => {
+			error!("Please configure the GJ_DISCORD_TOKEN environment variable");
+			return Err(anyhow::Error::from(e));
+		}
+	};
 
-	// let path = PathBuf::from("config.json");
-	// let mut persistent_data = PersistentJson::<Config>::new(path).expect("Failed to load data");
-	// {
-	// 	let read_data = &*persistent_data;
-	// 	println!("Setting 1: {:?}", read_data.setting1);
-	// 	println!("Setting 2: {:?}", read_data.setting2);
-	// }
-	//
-	// {
-	// 	let mut write_data = persistent_data.write();
-	// 	write_data.setting1 = "New Value".to_string();
-	// 	write_data.setting2 += 1;
-	// }
+	info!("Starting Gjallarbot");
+
+	bot::client(&token).await?.start().await?;
+
+	Ok(())
 }
