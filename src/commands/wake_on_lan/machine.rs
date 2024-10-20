@@ -64,14 +64,45 @@ async fn process_add_machine(data: &BotData, name: String, mac: String) -> Resul
 	Ok(embed)
 }
 
-#[poise::command(slash_command, rename="remove-machine")]
+#[poise::command(slash_command, owners_only, rename="remove-machine")]
 pub async fn remove_machine(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
 ) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
+	let embed = process_remove_machine(ctx.data(), name).await?;
+
+	ctx.send(CreateReply::default().embed(embed)).await?;
 
 	Ok(())
+}
+
+async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEmbed, BotError> {
+	{
+		let read = data.read().await;
+		if !read.wake_on_lan.contains_key(&name) {
+			let embed = CreateEmbed::default()
+				.title(":x: Invalid Machine")
+				.colour(Colour(0xdd2e44))
+				.description(format!("No machine with name {name} exists"));
+			return Ok(embed);
+		}
+	}
+
+	let name_field = name.clone();
+
+	{
+		let mut lock = data.write().await;
+		let mut data_write = lock.write();
+		data_write.wake_on_lan.remove(&name);
+	}
+
+	let embed = CreateEmbed::default()
+		.title(":white_check_mark: Success")
+		.colour(Colour(0x77b255))
+		.description("Successfully removed machine!")
+		.field("Name", name_field, true);
+
+	Ok(embed)
 }
 
 #[poise::command(slash_command, rename="list-machines")]
@@ -185,6 +216,68 @@ mod tests {
 			authorized_users: Default::default(),
 			authorized_roles: Default::default(),
 		});
+
+		assert_eq!(result, expected_embed);
+		assert_eq!(data.read().await.wake_on_lan, expected_data);
+	}
+
+	#[tokio::test]
+	async fn given_nonexistent_machine_then_returns_error_and_does_not_modify_data() {
+		let data = data::tests::mock_data(Some(json!({
+            "wake_on_lan": {
+                "ExistingMachine": {
+                    "mac": [1, 2, 3, 4, 5, 6],
+                    "authorized_users": [],
+                    "authorized_roles": []
+                }
+            }
+        })));
+
+		let result = process_remove_machine(
+			&data,
+			"NonexistentMachine".to_string(),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Machine")
+			.colour(Colour(0xdd2e44))
+			.description("No machine with name NonexistentMachine exists");
+
+		let mut expected_data = BTreeMap::new();
+		expected_data.insert("ExistingMachine".to_string(), WakeOnLanMachineInfo {
+			mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+			authorized_users: Default::default(),
+			authorized_roles: Default::default(),
+		});
+
+		assert_eq!(result, expected_embed);
+		assert_eq!(data.read().await.wake_on_lan, expected_data);
+	}
+
+	#[tokio::test]
+	async fn given_existing_machine_then_returns_success_and_removes_machine() {
+		let data = data::tests::mock_data(Some(json!({
+            "wake_on_lan": {
+                "MachineToRemove": {
+                    "mac": [1, 2, 3, 4, 5, 6],
+                    "authorized_users": [],
+                    "authorized_roles": []
+                }
+            }
+        })));
+
+		let result = process_remove_machine(
+			&data,
+			"MachineToRemove".to_string(),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":white_check_mark: Success")
+			.colour(Colour(0x77b255))
+			.description("Successfully removed machine!")
+			.field("Name", "MachineToRemove", true);
+
+		let expected_data = BTreeMap::new();
 
 		assert_eq!(result, expected_embed);
 		assert_eq!(data.read().await.wake_on_lan, expected_data);
