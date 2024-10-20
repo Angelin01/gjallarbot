@@ -7,6 +7,7 @@ mod services;
 mod data;
 mod commands;
 mod bot;
+mod errors;
 
 #[tokio::main]
 async fn main() -> Result<()> {
