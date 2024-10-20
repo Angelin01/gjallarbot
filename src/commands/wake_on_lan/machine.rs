@@ -109,9 +109,34 @@ async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEm
 pub async fn list_machines(
 	ctx: Context<'_>,
 ) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
+	let embed = process_list_machines(ctx.data()).await?;
+
+	ctx.send(CreateReply::default().embed(embed)).await?;
 
 	Ok(())
+}
+
+async fn process_list_machines(data: &BotData) -> Result<CreateEmbed, BotError> {
+	let read = data.read().await;
+	if read.wake_on_lan.is_empty() {
+		let embed = CreateEmbed::default()
+			.title(":information_source: Machine list")
+			.colour(Colour(0x55acee))
+			.description("There are no machines configured");
+		return Ok(embed);
+	}
+
+	let machine_list = read.wake_on_lan.iter()
+		.map(|m| format!("- {}: `{}`", m.0, m.1.mac))
+		.collect::<Vec<String>>()
+		.join("\n");
+
+	let embed = CreateEmbed::default()
+		.title(":information_source: Machine list")
+		.colour(Colour(0x55acee))
+		.description(format!("Configured machines:\n{machine_list}"));
+
+	Ok(embed)
 }
 
 #[cfg(test)]
@@ -281,5 +306,58 @@ mod tests {
 
 		assert_eq!(result, expected_embed);
 		assert_eq!(data.read().await.wake_on_lan, expected_data);
+	}
+
+	#[tokio::test]
+	async fn given_no_machines_then_returns_empty_list_message() {
+		let data = data::tests::mock_data(Some(json!({
+            "wake_on_lan": {}
+        })));
+
+		let result = process_list_machines(&data).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":information_source: Machine list")
+			.colour(Colour(0x55acee))
+			.description("There are no machines configured");
+
+		assert_eq!(result, expected_embed);
+	}
+
+	#[tokio::test]
+	async fn given_multiple_machines_then_returns_list_of_machines() {
+		let data = data::tests::mock_data(Some(json!({
+            "wake_on_lan": {
+                "MachineOne": {
+                    "mac": [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+                    "authorized_users": [],
+                    "authorized_roles": []
+                },
+                "MachineTwo": {
+                    "mac": [0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C],
+                    "authorized_users": [],
+                    "authorized_roles": []
+                },
+                "MachineThree": {
+                    "mac": [0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12],
+                    "authorized_users": [],
+                    "authorized_roles": []
+                }
+            }
+        })));
+
+		let result = process_list_machines(&data).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":information_source: Machine list")
+			.colour(Colour(0x55acee))
+			.description(
+"Configured machines:\n\
+- MachineOne: `01:02:03:04:05:06`\n\
+- MachineThree: `0D:0E:0F:10:11:12`\n\
+- MachineTwo: `07:08:09:0A:0B:0C`"
+			);
+
+		assert_eq!(result, expected_embed);
 	}
 }
