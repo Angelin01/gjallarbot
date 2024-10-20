@@ -66,7 +66,12 @@ impl<T: PersistentData + Default> PersistentJson<T> {
 	pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
 		let data = if fs::exists(&path)? {
 			let content = fs::read_to_string(&path)?;
-			serde_json::from_str(&content)?
+			if content.is_empty() {
+				Default::default()
+			}
+			else {
+				serde_json::from_str(&content)?
+			}
 		} else {
 			Default::default()
 		};
