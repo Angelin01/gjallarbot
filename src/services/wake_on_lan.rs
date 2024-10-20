@@ -13,7 +13,7 @@ const MAC_REPETITIONS: usize = 16;
 const MAGIC_PACKET_SIZE: usize = HEADER_SIZE + (MAC_ADDRESS_SIZE * MAC_REPETITIONS);
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
-pub struct MacAddress([u8; MAC_ADDRESS_SIZE]);
+pub struct MacAddress(pub [u8; MAC_ADDRESS_SIZE]);
 
 impl FromStr for MacAddress {
     type Err = InvalidMacError;
