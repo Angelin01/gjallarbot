@@ -17,7 +17,12 @@ pub struct PersistentWriteGuard<'a, T: PersistentData> {
 
 impl<'a, T: PersistentData> PersistentWriteGuard<'a, T> {
 	fn write_to_file(&self) -> Result<()> {
-		let json = serde_json::to_string(&*self.data)?;
+		let json = if cfg!(debug_assertions) {
+			serde_json::to_string_pretty(&*self.data)?
+		}
+		else {
+			serde_json::to_string(&*self.data)?
+		};
 		let mut file = File::create(self.path)?;
 		file.write_all(json.as_bytes())?;
 		Ok(())

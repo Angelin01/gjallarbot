@@ -2,10 +2,12 @@ use std::net::{Ipv4Addr, UdpSocket};
 use anyhow::Result;
 
 const MAC_ADDRESS_SIZE: usize = 6;
+pub type MacAddress = [u8; MAC_ADDRESS_SIZE];
 const HEADER_SIZE: usize = 6;
 const MAC_REPETITIONS: usize = 16;
 const MAGIC_PACKET_SIZE: usize = HEADER_SIZE + (MAC_ADDRESS_SIZE * MAC_REPETITIONS);
 
+// TODO: rewrite this into an anonymous type with defer
 pub struct MagicPacket {
 	raw_bytes: [u8; MAGIC_PACKET_SIZE],
 }
@@ -21,14 +23,14 @@ impl MagicPacket {
 		&self.raw_bytes
 	}
 
-	fn parse_mac<T: AsRef<str>>(mac: T) -> Result<[u8; MAC_ADDRESS_SIZE]> {
+	fn parse_mac<T: AsRef<str>>(mac: T) -> Result<MacAddress> {
 		let parts: Vec<_> = mac.as_ref().split(":").collect();
 		let len = parts.len();
 		if len != MAC_ADDRESS_SIZE {
 			return Err(anyhow::Error::msg(format!("Invalid MAC address: {} parts", len)));
 		}
 
-		let mut mac: [u8; MAC_ADDRESS_SIZE] = [0; MAC_ADDRESS_SIZE];
+		let mut mac: MacAddress = [0; MAC_ADDRESS_SIZE];
 
 		for (i, part) in parts.iter().enumerate() {
 			mac[i] = u8::from_str_radix(part, 16)
@@ -38,7 +40,7 @@ impl MagicPacket {
 		Ok(mac)
 	}
 
-	fn build_magic_packet(mac: &[u8; MAC_ADDRESS_SIZE]) -> [u8; 102] {
+	fn build_magic_packet(mac: &MacAddress) -> [u8; 102] {
 		let mut magic_packet = [0xFFu8; MAGIC_PACKET_SIZE];
 
 		for repetition in 0..MAC_REPETITIONS {
