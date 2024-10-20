@@ -12,7 +12,7 @@ const HEADER_SIZE: usize = 6;
 const MAC_REPETITIONS: usize = 16;
 const MAGIC_PACKET_SIZE: usize = HEADER_SIZE + (MAC_ADDRESS_SIZE * MAC_REPETITIONS);
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct MacAddress([u8; MAC_ADDRESS_SIZE]);
 
 impl FromStr for MacAddress {
@@ -29,7 +29,7 @@ impl FromStr for MacAddress {
 
         for (i, part) in parts.iter().enumerate() {
             mac[i] = u8::from_str_radix(part, 16)
-                .map_err(|e| InvalidMacError::InvalidHexString(e))?;
+                .map_err(|_| InvalidMacError::InvalidHexString(part.to_string()))?;
         }
 
         Ok(Self(mac))
