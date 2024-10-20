@@ -1,10 +1,11 @@
 use poise::CreateReply;
 use poise::serenity_prelude::{Colour, CreateEmbed};
+use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
 use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 use crate::services::wake_on_lan::MacAddress;
 
-#[poise::command(slash_command, owners_only, rename="add-machine")]
+#[poise::command(slash_command, owners_only, rename = "add-machine")]
 pub async fn add_machine(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
@@ -64,10 +65,12 @@ async fn process_add_machine(data: &BotData, name: String, mac: String) -> Resul
 	Ok(embed)
 }
 
-#[poise::command(slash_command, owners_only, rename="remove-machine")]
+#[poise::command(slash_command, owners_only, rename = "remove-machine")]
 pub async fn remove_machine(
 	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
+	#[description = "Machine name"]
+	#[autocomplete = "autocomplete_machine_name"]
+	name: String,
 ) -> Result<(), BotError> {
 	let embed = process_remove_machine(ctx.data(), name).await?;
 
@@ -105,7 +108,7 @@ async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEm
 	Ok(embed)
 }
 
-#[poise::command(slash_command, rename="list-machines")]
+#[poise::command(slash_command, rename = "list-machines")]
 pub async fn list_machines(
 	ctx: Context<'_>,
 ) -> Result<(), BotError> {
@@ -161,7 +164,7 @@ mod tests {
 		let result = process_add_machine(
 			&data,
 			"SomeMachine".into(),
-			"00:00:00:00:00:01".into()
+			"00:00:00:00:00:01".into(),
 		).await.unwrap();
 
 		let expected_embed = CreateEmbed::default()
@@ -187,7 +190,7 @@ mod tests {
 		let result = process_add_machine(
 			&data,
 			"NewMachine".to_string(),
-			"invalid_mac".to_string()
+			"invalid_mac".to_string(),
 		).await.unwrap();
 
 		let expected_embed = CreateEmbed::default()
@@ -206,7 +209,7 @@ mod tests {
 		let result = process_add_machine(
 			&data,
 			"NewMachine".to_string(),
-			"AA:BB:CC:DD:EE:PP".to_string()
+			"AA:BB:CC:DD:EE:PP".to_string(),
 		).await.unwrap();
 
 		let expected_embed = CreateEmbed::default()
@@ -225,7 +228,7 @@ mod tests {
 		let result = process_add_machine(
 			&data,
 			"NewMachine".to_string(),
-			"00:00:00:00:00:01".to_string()
+			"00:00:00:00:00:01".to_string(),
 		).await.unwrap();
 
 		let expected_embed = CreateEmbed::default()
@@ -352,7 +355,7 @@ mod tests {
 			.title(":information_source: Machine list")
 			.colour(Colour(0x55acee))
 			.description(
-"Configured machines:\n\
+				"Configured machines:\n\
 - MachineOne: `01:02:03:04:05:06`\n\
 - MachineThree: `0D:0E:0F:10:11:12`\n\
 - MachineTwo: `07:08:09:0A:0B:0C`"

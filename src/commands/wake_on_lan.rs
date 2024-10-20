@@ -22,6 +22,23 @@ pub async fn wake_on_lan(_: Context<'_>) -> Result<(), BotError> {
 	panic!("Can't call parent commands");
 }
 
+async fn autocomplete_machine_name(
+	ctx: Context<'_>,
+	partial: &str,
+) -> Vec<String> {
+	const DISCORD_MAX_CHOICES: usize = 25;
+
+	ctx.data()
+		.read()
+		.await
+		.wake_on_lan
+		.iter()
+		.filter(|&(name, _)| name.starts_with(partial))
+		.take(DISCORD_MAX_CHOICES)
+		.map(|(name, _)| name.clone())
+		.collect()
+}
+
 #[poise::command(slash_command)]
 async fn wake(
 	ctx: Context<'_>,
