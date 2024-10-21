@@ -9,6 +9,10 @@ pub type WakeOnLanData = BTreeMap<String, WakeOnLanMachineInfo>;
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct WakeOnLanMachineInfo {
     pub mac: MacAddress,
+	#[serde(skip_serializing_if = "BTreeSet::is_empty")]
+	#[serde(default)]
     pub authorized_users: BTreeSet<serenity::UserId>,
+	#[serde(skip_serializing_if = "BTreeSet::is_empty")]
+	#[serde(default)]
     pub authorized_roles: BTreeSet<serenity::RoleId>,
 }
