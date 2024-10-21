@@ -1,5 +1,5 @@
 use poise::CreateReply;
-use poise::serenity_prelude::{Colour, CreateAllowedMentions, CreateEmbed, User, UserId};
+use poise::serenity_prelude::{Colour, CreateAllowedMentions, CreateEmbed, Role, RoleId, User, UserId};
 use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
 
@@ -109,6 +109,112 @@ async fn process_remove_user(data: &BotData, machine_name: String, user_id: User
 	Ok(embed)
 }
 
+#[poise::command(slash_command, owners_only, rename = "add-role")]
+pub async fn add_role(
+	ctx: Context<'_>,
+	#[description = "Machine name"]
+	#[autocomplete = "autocomplete_machine_name"]
+	machine_name: String,
+	#[description = "Role to authorize"] role: Role,
+) -> Result<(), BotError> {
+	let embed = process_add_role(ctx.data(), machine_name, role.id).await?;
+
+	ctx.send(
+		CreateReply::default()
+			.embed(embed)
+			.allowed_mentions(CreateAllowedMentions::default().empty_users().empty_roles())
+	).await?;
+
+	Ok(())
+}
+
+async fn process_add_role(data: &BotData, machine_name: String, role_id: RoleId) -> Result<CreateEmbed, BotError> {
+	let mut lock = data.write().await;
+	let mut data_write = lock.write();
+
+	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
+		Some(info) => info,
+		None => {
+			let embed = CreateEmbed::default()
+				.title(":x: Invalid Machine")
+				.colour(Colour(0xdd2e44))
+				.description(format!("No machine with name {machine_name} exists"));
+			return Ok(embed);
+		}
+	};
+
+	if machine_info.authorized_roles.contains(&role_id) {
+		let embed = CreateEmbed::default()
+			.title(":x: Role already added")
+			.colour(Colour(0xdd2e44))
+			.description(format!("Role <@&{role_id}> is already authorized for machine {machine_name}"));
+		return Ok(embed);
+	}
+
+	machine_info.authorized_roles.insert(role_id);
+
+	let embed = CreateEmbed::default()
+		.title(":white_check_mark: Role added")
+		.colour(Colour(0x77b255))
+		.description("Successfully added role to the machine!")
+		.field("Machine", machine_name, true)
+		.field("Role", format!("<@&{role_id}>"), true);
+
+	Ok(embed)
+}
+
+#[poise::command(slash_command, owners_only, rename = "remove-role")]
+pub async fn remove_role(
+	ctx: Context<'_>,
+	#[description = "Machine name"] name: String,
+	#[description = "Role that will no longer be allowed to turn this machine on"] role: Role,
+) -> Result<(), BotError> {
+	let embed = process_remove_role(ctx.data(), name, role.id).await?;
+
+	ctx.send(
+		CreateReply::default()
+			.embed(embed)
+			.allowed_mentions(CreateAllowedMentions::default().empty_users().empty_roles())
+	).await?;
+
+	Ok(())
+}
+
+async fn process_remove_role(data: &BotData, machine_name: String, role_id: RoleId) -> Result<CreateEmbed, BotError> {
+	let mut lock = data.write().await;
+	let mut data_write = lock.write();
+
+	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
+		Some(info) => info,
+		None => {
+			let embed = CreateEmbed::default()
+				.title(":x: Invalid Machine")
+				.colour(Colour(0xdd2e44))
+				.description(format!("No machine with name {machine_name} exists"));
+			return Ok(embed);
+		}
+	};
+
+	if !machine_info.authorized_roles.contains(&role_id) {
+		let embed = CreateEmbed::default()
+			.title(":x: Role not found")
+			.colour(Colour(0xdd2e44))
+			.description(format!("Role <@&{role_id}> is not authorized for machine {machine_name}"));
+		return Ok(embed);
+	}
+
+	machine_info.authorized_roles.retain(|&id| id != role_id);
+
+	let embed = CreateEmbed::default()
+		.title(":white_check_mark: Role removed")
+		.colour(Colour(0x77b255))
+		.description("Successfully removed role from the machine!")
+		.field("Machine", machine_name, true)
+		.field("Role", format!("<@&{role_id}>"), true);
+
+	Ok(embed)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -137,14 +243,14 @@ mod tests {
 	#[tokio::test]
 	async fn given_already_authorized_user_then_add_user_returns_error_and_does_not_modify_data() {
 		let data = mock_data(Some(json!({
-            "wake_on_lan": {
-                "ExistingMachine": {
-                    "mac": [1, 2, 3, 4, 5, 6],
-                    "authorized_users": [12345678901234567u64],
-                    "authorized_roles": []
-                }
-            }
-        })));
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [12345678901234567u64],
+					"authorized_roles": []
+				}
+			}
+		})));
 
 		let result = process_add_user(
 			&data,
@@ -164,14 +270,14 @@ mod tests {
 	#[tokio::test]
 	async fn given_new_user_then_add_user_returns_success_and_adds_user() {
 		let data = mock_data(Some(json!({
-            "wake_on_lan": {
-                "ExistingMachine": {
-                    "mac": [1, 2, 3, 4, 5, 6],
-                    "authorized_users": [],
-                    "authorized_roles": []
-                }
-            }
-        })));
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [],
+					"authorized_roles": []
+				}
+			}
+		})));
 
 		let result = process_add_user(
 			&data,
@@ -212,14 +318,14 @@ mod tests {
 	#[tokio::test]
 	async fn given_non_authorized_user_then_returns_error_and_does_not_modify_data() {
 		let data = mock_data(Some(json!({
-            "wake_on_lan": {
-                "ExistingMachine": {
-                    "mac": [1, 2, 3, 4, 5, 6],
-                    "authorized_users": [12345678901234567u64],
-                    "authorized_roles": []
-                }
-            }
-        })));
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [12345678901234567u64],
+					"authorized_roles": []
+				}
+			}
+		})));
 
 		let result = process_remove_user(
 			&data,
@@ -239,14 +345,14 @@ mod tests {
 	#[tokio::test]
 	async fn given_authorized_user_then_returns_success_and_removes_user() {
 		let data = mock_data(Some(json!({
-            "wake_on_lan": {
-                "ExistingMachine": {
-                    "mac": [1, 2, 3, 4, 5, 6],
-                    "authorized_users": [12345678901234567u64],
-                    "authorized_roles": []
-                }
-            }
-        })));
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [12345678901234567u64],
+					"authorized_roles": []
+				}
+			}
+		})));
 
 		let result = process_remove_user(
 			&data,
@@ -263,5 +369,155 @@ mod tests {
 
 		assert_eq!(result, expected_embed);
 		assert!(!data.read().await.wake_on_lan["ExistingMachine"].authorized_users.contains(&UserId::new(12345678901234567)));
+	}
+
+	#[tokio::test]
+	async fn given_nonexistent_machine_then_add_role_returns_error_and_does_not_modify_data() {
+		let data = mock_data(None);
+
+		let result = process_add_role(
+			&data,
+			"NonExistentMachine".to_string(),
+			RoleId::new(98765432109876543),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Machine")
+			.colour(Colour(0xdd2e44))
+			.description("No machine with name NonExistentMachine exists");
+
+		assert_eq!(result, expected_embed);
+		assert!(data.read().await.wake_on_lan.is_empty());
+	}
+
+	#[tokio::test]
+	async fn given_already_authorized_role_then_add_role_returns_error_and_does_not_modify_data() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [],
+					"authorized_roles": [98765432109876543u64]
+				}
+			}
+		})));
+
+		let result = process_add_role(
+			&data,
+			"ExistingMachine".to_string(),
+			RoleId::new(98765432109876543),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Role already added")
+			.colour(Colour(0xdd2e44))
+			.description("Role <@&98765432109876543> is already authorized for machine ExistingMachine");
+
+		assert_eq!(result, expected_embed);
+		assert_eq!(data.read().await.wake_on_lan["ExistingMachine"].authorized_roles.len(), 1);
+	}
+
+	#[tokio::test]
+	async fn given_new_role_then_add_role_returns_success_and_adds_role() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [],
+					"authorized_roles": []
+				}
+			}
+		})));
+
+		let result = process_add_role(
+			&data,
+			"ExistingMachine".to_string(),
+			RoleId::new(98765432109876543),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":white_check_mark: Role added")
+			.colour(Colour(0x77b255))
+			.description("Successfully added role to the machine!")
+			.field("Machine", "ExistingMachine", true)
+			.field("Role", "<@&98765432109876543>", true);
+
+		assert_eq!(result, expected_embed);
+		assert!(data.read().await.wake_on_lan["ExistingMachine"].authorized_roles.contains(&RoleId::new(98765432109876543)));
+	}
+
+	#[tokio::test]
+	async fn given_nonexistent_machine_then_remove_role_returns_error_and_does_not_modify_data() {
+		let data = mock_data(None);
+
+		let result = process_remove_role(
+			&data,
+			"NonExistentMachine".to_string(),
+			RoleId::new(98765432109876543),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Machine")
+			.colour(Colour(0xdd2e44))
+			.description("No machine with name NonExistentMachine exists");
+
+		assert_eq!(result, expected_embed);
+		assert!(data.read().await.wake_on_lan.is_empty());
+	}
+
+	#[tokio::test]
+	async fn given_non_authorized_role_then_remove_role_returns_error_and_does_not_modify_data() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [],
+					"authorized_roles": [12345678901234567u64]
+				}
+			}
+		})));
+
+		let result = process_remove_role(
+			&data,
+			"ExistingMachine".to_string(),
+			RoleId::new(98765432109876543),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Role not found")
+			.colour(Colour(0xdd2e44))
+			.description("Role <@&98765432109876543> is not authorized for machine ExistingMachine");
+
+		assert_eq!(result, expected_embed);
+		assert_eq!(data.read().await.wake_on_lan["ExistingMachine"].authorized_roles.len(), 1);
+	}
+
+	#[tokio::test]
+	async fn given_authorized_role_then_remove_role_returns_success_and_removes_role() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [],
+					"authorized_roles": [98765432109876543u64]
+				}
+			}
+		})));
+
+		let result = process_remove_role(
+			&data,
+			"ExistingMachine".to_string(),
+			RoleId::new(98765432109876543),
+		).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":white_check_mark: Role removed")
+			.colour(Colour(0x77b255))
+			.description("Successfully removed role from the machine!")
+			.field("Machine", "ExistingMachine", true)
+			.field("Role", "<@&98765432109876543>", true);
+
+		assert_eq!(result, expected_embed);
+		assert!(!data.read().await.wake_on_lan["ExistingMachine"].authorized_roles.contains(&RoleId::new(98765432109876543)));
 	}
 }
