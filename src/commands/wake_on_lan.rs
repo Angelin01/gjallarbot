@@ -1,14 +1,14 @@
 mod machine;
 mod authorization;
+mod wake;
 
-use poise::CreateReply;
 use crate::data::{Context, BotError};
 
 #[poise::command(
 	slash_command,
 	rename="wake-on-lan",
 	subcommands(
-		"wake",
+		"wake::wake",
 		"machine::add_machine",
 		"machine::remove_machine",
 		"machine::list_machines",
@@ -38,14 +38,4 @@ async fn autocomplete_machine_name(
 		.take(DISCORD_MAX_CHOICES)
 		.map(|(name, _)| name.clone())
 		.collect()
-}
-
-#[poise::command(slash_command)]
-async fn wake(
-	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
-) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
-
-	Ok(())
 }
