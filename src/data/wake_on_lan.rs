@@ -6,6 +6,7 @@ use crate::services::wake_on_lan::MacAddress;
 pub type WakeOnLanData = BTreeMap<String, WakeOnLanMachineInfo>;
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct WakeOnLanMachineInfo {
     pub mac: MacAddress,
     pub authorized_users: BTreeSet<serenity::UserId>,

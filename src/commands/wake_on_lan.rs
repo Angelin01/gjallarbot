@@ -1,3 +1,5 @@
+mod machine;
+
 use poise::{serenity_prelude as serenity, CreateReply};
 use crate::data::{Context, BotError};
 
@@ -6,9 +8,9 @@ use crate::data::{Context, BotError};
 	rename="wake-on-lan",
 	subcommands(
 		"wake",
-		"add_machine",
-		"remove_machine",
-		"list_machines",
+		"machine::add_machine",
+		"machine::remove_machine",
+		"machine::list_machines",
 		"add_user",
 		"remove_user",
 		"add_role",
@@ -20,40 +22,27 @@ pub async fn wake_on_lan(_: Context<'_>) -> Result<(), BotError> {
 	panic!("Can't call parent commands");
 }
 
+async fn autocomplete_machine_name(
+	ctx: Context<'_>,
+	partial: &str,
+) -> Vec<String> {
+	const DISCORD_MAX_CHOICES: usize = 25;
+
+	ctx.data()
+		.read()
+		.await
+		.wake_on_lan
+		.iter()
+		.filter(|&(name, _)| name.starts_with(partial))
+		.take(DISCORD_MAX_CHOICES)
+		.map(|(name, _)| name.clone())
+		.collect()
+}
+
 #[poise::command(slash_command)]
 async fn wake(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
-) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
-
-	Ok(())
-}
-
-#[poise::command(slash_command, rename="add-machine")]
-async fn add_machine(
-	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
-	#[description = "Machine MAC Address"] mac: String,
-) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
-
-	Ok(())
-}
-
-#[poise::command(slash_command, rename="remove-machine")]
-async fn remove_machine(
-	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
-) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
-
-	Ok(())
-}
-
-#[poise::command(slash_command, rename="list-machines")]
-async fn list_machines(
-	ctx: Context<'_>,
 ) -> Result<(), BotError> {
 	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
 
