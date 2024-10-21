@@ -1,4 +1,5 @@
 mod machine;
+mod authorization;
 
 use poise::{serenity_prelude as serenity, CreateReply};
 use crate::data::{Context, BotError};
@@ -11,8 +12,8 @@ use crate::data::{Context, BotError};
 		"machine::add_machine",
 		"machine::remove_machine",
 		"machine::list_machines",
-		"add_user",
-		"remove_user",
+		"authorization::add_user",
+		"authorization::remove_user",
 		"add_role",
 		"remove_role",
 	),
@@ -43,28 +44,6 @@ async fn autocomplete_machine_name(
 async fn wake(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
-) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
-
-	Ok(())
-}
-
-#[poise::command(slash_command, rename="add-user")]
-async fn add_user(
-	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
-	#[description = "User that will be allowed to turn this machine on"] user: serenity::User,
-) -> Result<(), BotError> {
-	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
-
-	Ok(())
-}
-
-#[poise::command(slash_command, rename="remove-user")]
-async fn remove_user(
-	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
-	#[description = "User that will no longer be allowed to turn this machine on"] user: serenity::User,
 ) -> Result<(), BotError> {
 	ctx.send(CreateReply::default().ephemeral(true).content("It works")).await?;
 
