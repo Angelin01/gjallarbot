@@ -4,6 +4,7 @@ use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
 use crate::services::wake_on_lan::MagicPacket;
 
+// Send a machine a wake up magic packet
 #[poise::command(slash_command)]
 pub async fn wake(
 	ctx: Context<'_>,

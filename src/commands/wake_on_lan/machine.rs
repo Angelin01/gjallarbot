@@ -5,11 +5,12 @@ use crate::data::{BotData, BotError, Context};
 use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 use crate::services::wake_on_lan::MacAddress;
 
+// Adds a new machine that can be woken up
 #[poise::command(slash_command, owners_only, rename = "add-machine")]
 pub async fn add_machine(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
-	#[description = "Machine MAC Address"] mac: String,
+	#[description = "Machine MAC Address as hex digits separated by :"] mac: String,
 ) -> Result<(), BotError> {
 	let embed = process_add_machine(ctx.data(), name, mac).await?;
 
@@ -65,6 +66,7 @@ async fn process_add_machine(data: &BotData, name: String, mac: String) -> Resul
 	Ok(embed)
 }
 
+// Removes a previously configured machine
 #[poise::command(slash_command, owners_only, rename = "remove-machine")]
 pub async fn remove_machine(
 	ctx: Context<'_>,
@@ -108,6 +110,7 @@ async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEm
 	Ok(embed)
 }
 
+/// Lists all configured machines and their MAC Address
 #[poise::command(slash_command, rename = "list-machines")]
 pub async fn list_machines(
 	ctx: Context<'_>,

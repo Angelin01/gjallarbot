@@ -3,13 +3,14 @@ use poise::serenity_prelude::{Colour, CreateAllowedMentions, CreateEmbed, Role, 
 use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
 
+/// Authorizes a user to wake up a specific machine
 #[poise::command(slash_command, owners_only, rename = "add-user")]
 pub async fn add_user(
 	ctx: Context<'_>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,
-	#[description = "User to authorize"] user: User,
+	#[description = "User that be allowed wake this machine"] user: User,
 ) -> Result<(), BotError> {
 	let embed = process_add_user(ctx.data(), machine_name, user.id).await?;
 
@@ -57,11 +58,12 @@ async fn process_add_user(data: &BotData, machine_name: String, user_id: UserId)
 	Ok(embed)
 }
 
+/// Deauthorizes a previously configured user from waking up a specific machine
 #[poise::command(slash_command, owners_only, rename = "remove-user")]
 pub async fn remove_user(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
-	#[description = "User that will no longer be allowed to turn this machine on"] user: User,
+	#[description = "User that will no longer be allowed wake this machine"] user: User,
 ) -> Result<(), BotError> {
 	let embed = process_remove_user(ctx.data(), name, user.id).await?;
 
@@ -109,13 +111,14 @@ async fn process_remove_user(data: &BotData, machine_name: String, user_id: User
 	Ok(embed)
 }
 
+/// Authorizes a role to wake up a specific machine
 #[poise::command(slash_command, owners_only, rename = "add-role")]
 pub async fn add_role(
 	ctx: Context<'_>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,
-	#[description = "Role to authorize"] role: Role,
+	#[description = "Role that be allowed wake this machine"] role: Role,
 ) -> Result<(), BotError> {
 	let embed = process_add_role(ctx.data(), machine_name, role.id).await?;
 
@@ -163,11 +166,12 @@ async fn process_add_role(data: &BotData, machine_name: String, role_id: RoleId)
 	Ok(embed)
 }
 
+/// Deauthorizes a previously configured role from waking up a specific machine
 #[poise::command(slash_command, owners_only, rename = "remove-role")]
 pub async fn remove_role(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
-	#[description = "Role that will no longer be allowed to turn this machine on"] role: Role,
+	#[description = "Role that will no longer be allowed wake this machine"] role: Role,
 ) -> Result<(), BotError> {
 	let embed = process_remove_role(ctx.data(), name, role.id).await?;
 
