@@ -4,6 +4,7 @@ mod wake;
 
 use crate::data::{Context, BotError};
 
+/// Commands related to the wake-on-lan functionality
 #[poise::command(
 	slash_command,
 	rename="wake-on-lan",
@@ -12,6 +13,7 @@ use crate::data::{Context, BotError};
 		"machine::add_machine",
 		"machine::remove_machine",
 		"machine::list_machines",
+		"machine::describe_machine",
 		"authorization::add_user",
 		"authorization::remove_user",
 		"authorization::add_role",

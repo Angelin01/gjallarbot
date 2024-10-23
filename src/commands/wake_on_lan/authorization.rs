@@ -1,15 +1,17 @@
 use poise::CreateReply;
-use poise::serenity_prelude::{Colour, CreateAllowedMentions, CreateEmbed, Role, RoleId, User, UserId};
+use poise::serenity_prelude::{CreateAllowedMentions, CreateEmbed, Role, RoleId, User, UserId};
 use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
+use crate::embeds;
 
+/// Authorizes a user to wake up a specific machine
 #[poise::command(slash_command, owners_only, rename = "add-user")]
 pub async fn add_user(
 	ctx: Context<'_>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,
-	#[description = "User to authorize"] user: User,
+	#[description = "User that be allowed wake this machine"] user: User,
 ) -> Result<(), BotError> {
 	let embed = process_add_user(ctx.data(), machine_name, user.id).await?;
 
@@ -28,40 +30,31 @@ async fn process_add_user(data: &BotData, machine_name: String, user_id: UserId)
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			let embed = CreateEmbed::default()
-				.title(":x: Invalid Machine")
-				.colour(Colour(0xdd2e44))
-				.description(format!("No machine with name {machine_name} exists"));
-			return Ok(embed);
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if machine_info.authorized_users.contains(&user_id) {
-		let embed = CreateEmbed::default()
-			.title(":x: User already added")
-			.colour(Colour(0xdd2e44))
-			.description(format!("User <@{user_id}> is already authorized for machine {machine_name}"));
-		return Ok(embed);
+		return Ok(embeds::error(
+			"User already added",
+			format!("User <@{user_id}> is already authorized for machine {machine_name}"),
+		));
 	}
 
 	machine_info.authorized_users.insert(user_id);
 
-	let embed = CreateEmbed::default()
-		.title(":white_check_mark: User added")
-		.colour(Colour(0x77b255))
-		.description("Successfully added user to the machine!")
+	let embed = embeds::success("User added", "Successfully added user to the machine!")
 		.field("Machine", machine_name, true)
 		.field("User", format!("<@{user_id}>"), true);
 
 	Ok(embed)
 }
 
+/// Deauthorizes a previously configured user from waking up a specific machine
 #[poise::command(slash_command, owners_only, rename = "remove-user")]
 pub async fn remove_user(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
-	#[description = "User that will no longer be allowed to turn this machine on"] user: User,
+	#[description = "User that will no longer be allowed wake this machine"] user: User,
 ) -> Result<(), BotError> {
 	let embed = process_remove_user(ctx.data(), name, user.id).await?;
 
@@ -80,42 +73,33 @@ async fn process_remove_user(data: &BotData, machine_name: String, user_id: User
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			let embed = CreateEmbed::default()
-				.title(":x: Invalid Machine")
-				.colour(Colour(0xdd2e44))
-				.description(format!("No machine with name {machine_name} exists"));
-			return Ok(embed);
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if !machine_info.authorized_users.contains(&user_id) {
-		let embed = CreateEmbed::default()
-			.title(":x: User not found")
-			.colour(Colour(0xdd2e44))
-			.description(format!("User <@{user_id}> is not authorized for machine {machine_name}"));
-		return Ok(embed);
+		return Ok(embeds::error(
+			"User not found",
+			format!("User <@{user_id}> is not authorized for machine {machine_name}"),
+		));
 	}
 
 	machine_info.authorized_users.retain(|&id| id != user_id);
 
-	let embed = CreateEmbed::default()
-		.title(":white_check_mark: User removed")
-		.colour(Colour(0x77b255))
-		.description("Successfully removed user from the machine!")
+	let embed = embeds::success("User removed","Successfully removed user from the machine!")
 		.field("Machine", machine_name, true)
 		.field("User", format!("<@{user_id}>"), true);
 
 	Ok(embed)
 }
 
+/// Authorizes a role to wake up a specific machine
 #[poise::command(slash_command, owners_only, rename = "add-role")]
 pub async fn add_role(
 	ctx: Context<'_>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,
-	#[description = "Role to authorize"] role: Role,
+	#[description = "Role that be allowed wake this machine"] role: Role,
 ) -> Result<(), BotError> {
 	let embed = process_add_role(ctx.data(), machine_name, role.id).await?;
 
@@ -134,40 +118,31 @@ async fn process_add_role(data: &BotData, machine_name: String, role_id: RoleId)
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			let embed = CreateEmbed::default()
-				.title(":x: Invalid Machine")
-				.colour(Colour(0xdd2e44))
-				.description(format!("No machine with name {machine_name} exists"));
-			return Ok(embed);
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if machine_info.authorized_roles.contains(&role_id) {
-		let embed = CreateEmbed::default()
-			.title(":x: Role already added")
-			.colour(Colour(0xdd2e44))
-			.description(format!("Role <@&{role_id}> is already authorized for machine {machine_name}"));
-		return Ok(embed);
+		return Ok(embeds::error(
+			"Role already added",
+			format!("Role <@&{role_id}> is already authorized for machine {machine_name}"),
+		));
 	}
 
 	machine_info.authorized_roles.insert(role_id);
 
-	let embed = CreateEmbed::default()
-		.title(":white_check_mark: Role added")
-		.colour(Colour(0x77b255))
-		.description("Successfully added role to the machine!")
+	let embed = embeds::success("Role added","Successfully added role to the machine!")
 		.field("Machine", machine_name, true)
 		.field("Role", format!("<@&{role_id}>"), true);
 
 	Ok(embed)
 }
 
+/// Deauthorizes a previously configured role from waking up a specific machine
 #[poise::command(slash_command, owners_only, rename = "remove-role")]
 pub async fn remove_role(
 	ctx: Context<'_>,
 	#[description = "Machine name"] name: String,
-	#[description = "Role that will no longer be allowed to turn this machine on"] role: Role,
+	#[description = "Role that will no longer be allowed wake this machine"] role: Role,
 ) -> Result<(), BotError> {
 	let embed = process_remove_role(ctx.data(), name, role.id).await?;
 
@@ -186,29 +161,19 @@ async fn process_remove_role(data: &BotData, machine_name: String, role_id: Role
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			let embed = CreateEmbed::default()
-				.title(":x: Invalid Machine")
-				.colour(Colour(0xdd2e44))
-				.description(format!("No machine with name {machine_name} exists"));
-			return Ok(embed);
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if !machine_info.authorized_roles.contains(&role_id) {
-		let embed = CreateEmbed::default()
-			.title(":x: Role not found")
-			.colour(Colour(0xdd2e44))
-			.description(format!("Role <@&{role_id}> is not authorized for machine {machine_name}"));
-		return Ok(embed);
+		return Ok(embeds::error(
+			"Role not found",
+			format!("Role <@&{role_id}> is not authorized for machine {machine_name}"),
+		));
 	}
 
 	machine_info.authorized_roles.retain(|&id| id != role_id);
 
-	let embed = CreateEmbed::default()
-		.title(":white_check_mark: Role removed")
-		.colour(Colour(0x77b255))
-		.description("Successfully removed role from the machine!")
+	let embed = embeds::success("Role removed","Successfully removed role from the machine!")
 		.field("Machine", machine_name, true)
 		.field("Role", format!("<@&{role_id}>"), true);
 
@@ -217,6 +182,7 @@ async fn process_remove_role(data: &BotData, machine_name: String, role_id: Role
 
 #[cfg(test)]
 mod tests {
+	use poise::serenity_prelude::Colour;
 	use super::*;
 	use serde_json::json;
 	use crate::data::tests::mock_data;
