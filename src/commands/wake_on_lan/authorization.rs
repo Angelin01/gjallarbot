@@ -54,10 +54,12 @@ async fn process_add_user(data: &BotData, machine_name: String, user_id: UserId)
 #[poise::command(slash_command, owners_only, rename = "remove-user")]
 pub async fn remove_user(
 	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
+	#[description = "Machine name"]
+	#[autocomplete = "autocomplete_machine_name"]
+	machine_name: String,
 	#[description = "User that will no longer be allowed wake this machine"] user: User,
 ) -> Result<(), BotError> {
-	let embed = process_remove_user(ctx.data(), name, user.id).await?;
+	let embed = process_remove_user(ctx.data(), machine_name, user.id).await?;
 
 	ctx.send(
 		CreateReply::default()
@@ -142,10 +144,12 @@ async fn process_add_role(data: &BotData, machine_name: String, role_id: RoleId)
 #[poise::command(slash_command, owners_only, rename = "remove-role")]
 pub async fn remove_role(
 	ctx: Context<'_>,
-	#[description = "Machine name"] name: String,
+	#[description = "Machine name"]
+	#[autocomplete = "autocomplete_machine_name"]
+	machine_name: String,
 	#[description = "Role that will no longer be allowed wake this machine"] role: Role,
 ) -> Result<(), BotError> {
-	let embed = process_remove_role(ctx.data(), name, role.id).await?;
+	let embed = process_remove_role(ctx.data(), machine_name, role.id).await?;
 
 	ctx.send(
 		CreateReply::default()
