@@ -1,5 +1,5 @@
 use poise::CreateReply;
-use poise::serenity_prelude::{Colour, CreateEmbed};
+use poise::serenity_prelude::{CreateAllowedMentions, CreateEmbed};
 use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
 use crate::data::wake_on_lan::WakeOnLanMachineInfo;
@@ -106,7 +106,11 @@ pub async fn list_machines(
 ) -> Result<(), BotError> {
 	let embed = process_list_machines(ctx.data()).await?;
 
-	ctx.send(CreateReply::default().embed(embed)).await?;
+	ctx.send(
+		CreateReply::default()
+			.embed(embed)
+			.allowed_mentions(CreateAllowedMentions::default().empty_users().empty_roles())
+	).await?;
 
 	Ok(())
 }
@@ -131,16 +135,77 @@ async fn process_list_machines(data: &BotData) -> Result<CreateEmbed, BotError> 
 	))
 }
 
+/// Displays full information about a specific machine
+#[poise::command(slash_command, rename = "describe-machine")]
+pub async fn describe_machine(
+	ctx: Context<'_>,
+	#[description = "Machine name"]
+	#[autocomplete = "autocomplete_machine_name"]
+	machine_name: String,
+) -> Result<(), BotError> {
+	let embed = process_describe_machine(ctx.data(), machine_name).await?;
+
+	ctx.send(CreateReply::default().embed(embed)).await?;
+
+	Ok(())
+}
+
+async fn process_describe_machine(data: &BotData, machine_name: String) -> Result<CreateEmbed, BotError> {
+	let data_read = data.read().await;
+
+	let machine_info = match data_read.wake_on_lan.get(&machine_name) {
+		Some(info) => info,
+		None => return Ok(embeds::invalid_machine(&machine_name)),
+	};
+
+	let users = if machine_info.authorized_users.is_empty() {
+		"None".to_string()
+	}
+	else {
+		machine_info.authorized_users
+			.iter()
+			.map(|user_id| format!("<@{user_id}>"))
+			.collect::<Vec<String>>()
+			.join(", ")
+	};
+
+	let roles = if machine_info.authorized_roles.is_empty() {
+		"None".to_string()
+	}
+	else {
+		machine_info.authorized_roles
+			.iter()
+			.map(|role_id| format!("<@&{role_id}>"))
+			.collect::<Vec<String>>()
+			.join(", ")
+	};
+
+	let mac = &machine_info.mac;
+
+	let embed = embeds::info(
+		&format!("Machine {machine_name}"),
+		&format!(
+			"- MAC Address: `{mac}`\n\
+             - Authorized Users: {users}\n\
+             - Authorized Roles: {roles}",
+		),
+	);
+
+	Ok(embed)
+}
+
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use std::collections::BTreeMap;
+	use poise::serenity_prelude::Colour;
 	use serde_json::json;
-	use crate::data;
+	use crate::data::tests::mock_data;
 
 	#[tokio::test]
 	async fn given_duplicate_name_then_returns_error_and_does_not_update_data() {
-		let data = data::tests::mock_data(Some(json!({
+		let data = mock_data(Some(json!({
 			"wake_on_lan": {
 				"SomeMachine": {
 					"mac": [1, 2, 3, 4, 5, 6],
@@ -174,7 +239,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_invalid_mac_then_returns_error_and_does_not_update_data() {
-		let data = data::tests::mock_data(None);
+		let data = mock_data(None);
 
 		let result = process_add_machine(
 			&data,
@@ -193,7 +258,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_mac_with_invalid_hex_then_returns_error_and_does_not_update_data() {
-		let data = data::tests::mock_data(None);
+		let data = mock_data(None);
 
 		let result = process_add_machine(
 			&data,
@@ -212,7 +277,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_valid_input_then_returns_success_and_inserts_new_machine() {
-		let data = data::tests::mock_data(None);
+		let data = mock_data(None);
 
 		let result = process_add_machine(
 			&data,
@@ -240,7 +305,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_nonexistent_machine_then_returns_error_and_does_not_modify_data() {
-		let data = data::tests::mock_data(Some(json!({
+		let data = mock_data(Some(json!({
             "wake_on_lan": {
                 "ExistingMachine": {
                     "mac": [1, 2, 3, 4, 5, 6],
@@ -273,7 +338,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_existing_machine_then_returns_success_and_removes_machine() {
-		let data = data::tests::mock_data(Some(json!({
+		let data = mock_data(Some(json!({
             "wake_on_lan": {
                 "MachineToRemove": {
                     "mac": [1, 2, 3, 4, 5, 6],
@@ -302,7 +367,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_no_machines_then_returns_empty_list_message() {
-		let data = data::tests::mock_data(Some(json!({
+		let data = mock_data(Some(json!({
             "wake_on_lan": {}
         })));
 
@@ -318,7 +383,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_multiple_machines_then_returns_list_of_machines() {
-		let data = data::tests::mock_data(Some(json!({
+		let data = mock_data(Some(json!({
             "wake_on_lan": {
                 "MachineOne": {
                     "mac": [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
@@ -352,4 +417,75 @@ mod tests {
 
 		assert_eq!(result, expected_embed);
 	}
+
+	#[tokio::test]
+	async fn given_existing_machine_then_returns_machine_info() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"MachineOne": {
+					"mac": [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+					"authorized_users": [12345678901234567u64, 12345678901234568u64],
+					"authorized_roles": [98765432109876543u64, 98765432109876542u64]
+				}
+			}
+		})));
+
+		let result = process_describe_machine(&data, "MachineOne".to_string()).await.unwrap();
+
+		let expected_embed = embeds::info(
+			"Machine MachineOne",
+			"- MAC Address: `01:02:03:04:05:06`\n\
+         - Authorized Users: <@12345678901234567>, <@12345678901234568>\n\
+         - Authorized Roles: <@&98765432109876542>, <@&98765432109876543>",
+		);
+
+		assert_eq!(result, expected_embed);
+	}
+
+	#[tokio::test]
+	async fn given_nonexistent_machine_then_returns_error() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"MachineOne": {
+					"mac": [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+					"authorized_users": [],
+					"authorized_roles": []
+				}
+			}
+		})));
+
+		let result = process_describe_machine(&data, "NonExistentMachine".to_string()).await.unwrap();
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Machine")
+			.colour(Colour(0xdd2e44))
+			.description("No machine with name NonExistentMachine exists");
+
+		assert_eq!(result, expected_embed);
+	}
+
+	#[tokio::test]
+	async fn given_machine_with_no_authorized_users_and_roles_then_returns_info() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"MachineOne": {
+					"mac": [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+					"authorized_users": [],
+					"authorized_roles": []
+				}
+			}
+		})));
+
+		let result = process_describe_machine(&data, "MachineOne".to_string()).await.unwrap();
+
+		let expected_embed = embeds::info(
+			"Machine MachineOne",
+			"- MAC Address: `01:02:03:04:05:06`\n\
+         - Authorized Users: None\n\
+         - Authorized Roles: None",
+		);
+
+		assert_eq!(result, expected_embed);
+	}
+
 }

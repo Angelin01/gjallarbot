@@ -1,5 +1,5 @@
 use poise::CreateReply;
-use poise::serenity_prelude::{Colour, CreateAllowedMentions, CreateEmbed, Role, RoleId, User, UserId};
+use poise::serenity_prelude::{CreateAllowedMentions, CreateEmbed, Role, RoleId, User, UserId};
 use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
 use crate::embeds;
@@ -182,6 +182,7 @@ async fn process_remove_role(data: &BotData, machine_name: String, role_id: Role
 
 #[cfg(test)]
 mod tests {
+	use poise::serenity_prelude::Colour;
 	use super::*;
 	use serde_json::json;
 	use crate::data::tests::mock_data;
