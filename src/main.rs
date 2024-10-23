@@ -2,7 +2,7 @@
 #![feature(let_chains)]
 
 use anyhow::Result;
-use log::{error, info};
+use log::{error, info, LevelFilter};
 
 mod services;
 mod data;
@@ -13,7 +13,10 @@ mod embeds;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	env_logger::init();
+	env_logger::builder()
+		.filter_module("gjallarbot", LevelFilter::Info)
+		.parse_env("GJ_LOG_LEVEL")
+		.init();
 
 	let token = match std::env::var("GJ_DISCORD_TOKEN") {
 		Ok(token) => token,
@@ -23,7 +26,7 @@ async fn main() -> Result<()> {
 		}
 	};
 
-	info!("Starting Gjallarbot");
+	info!("Starting Gjallarbot v{}", env!("CARGO_PKG_VERSION"));
 
 	bot::client(&token).await?.start().await?;
 

@@ -1,3 +1,4 @@
+use log::info;
 use poise::CreateReply;
 use poise::serenity_prelude::{CreateAllowedMentions, CreateEmbed};
 use super::autocomplete_machine_name;
@@ -55,6 +56,8 @@ async fn process_add_machine(data: &BotData, name: String, mac: String) -> Resul
 		});
 	}
 
+	info!("Added machine {name_field} with mac {mac_field}");
+
 	let embed = embeds::success("Success", "Successfully added new machine!")
 		.field("Name", name_field, true)
 		.field("MAC Address", mac_field, true);
@@ -92,6 +95,8 @@ async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEm
 		let mut data_write = lock.write();
 		data_write.wake_on_lan.remove(&name);
 	}
+
+	info!("Removed machine {name_field}");
 
 	let embed = embeds::success("Success", "Successfully removed machine!")
 		.field("Name", name_field, true);

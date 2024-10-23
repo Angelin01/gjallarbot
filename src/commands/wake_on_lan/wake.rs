@@ -1,3 +1,4 @@
+use log::info;
 use poise::CreateReply;
 use poise::serenity_prelude::{CreateEmbed, User};
 use super::autocomplete_machine_name;
@@ -43,9 +44,11 @@ async fn process_wake(
 	}
 
 	let result = if authorized {
+		let mac = &machine_info.mac;
+		info!("Waking up machine {machine_name} with mac {mac}");
 		(
 			embeds::success("Machine woken", format!("Machine {machine_name} woken")),
-			Some(MagicPacket::from_mac(&machine_info.mac)),
+			Some(MagicPacket::from_mac(mac)),
 		)
 	}
 	else {

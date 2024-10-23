@@ -1,3 +1,4 @@
+use log::info;
 use poise::CreateReply;
 use poise::serenity_prelude::{CreateAllowedMentions, CreateEmbed, Role, RoleId, User, UserId};
 use super::autocomplete_machine_name;
@@ -33,18 +34,18 @@ async fn process_add_user(data: &BotData, machine_name: String, user_id: UserId)
 		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
-	if machine_info.authorized_users.contains(&user_id) {
-		return Ok(embeds::error(
+	let embed = if machine_info.authorized_users.insert(user_id) {
+		info!("Authorized user ID {user_id} on machine {machine_name}");
+		embeds::success("User added", "Successfully added user to the machine!")
+			.field("Machine", machine_name, true)
+			.field("User", format!("<@{user_id}>"), true)
+	}
+	else {
+		embeds::error(
 			"User already added",
 			format!("User <@{user_id}> is already authorized for machine {machine_name}"),
-		));
-	}
-
-	machine_info.authorized_users.insert(user_id);
-
-	let embed = embeds::success("User added", "Successfully added user to the machine!")
-		.field("Machine", machine_name, true)
-		.field("User", format!("<@{user_id}>"), true);
+		)
+	};
 
 	Ok(embed)
 }
@@ -76,18 +77,18 @@ async fn process_remove_user(data: &BotData, machine_name: String, user_id: User
 		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
-	if !machine_info.authorized_users.contains(&user_id) {
-		return Ok(embeds::error(
+	let embed = if machine_info.authorized_users.remove(&user_id) {
+		info!("Removed authorization from user ID {user_id} on machine {machine_name}");
+		embeds::success("User removed","Successfully removed user from the machine!")
+			.field("Machine", machine_name, true)
+			.field("User", format!("<@{user_id}>"), true)
+	}
+	else {
+		embeds::error(
 			"User not found",
 			format!("User <@{user_id}> is not authorized for machine {machine_name}"),
-		));
-	}
-
-	machine_info.authorized_users.retain(|&id| id != user_id);
-
-	let embed = embeds::success("User removed","Successfully removed user from the machine!")
-		.field("Machine", machine_name, true)
-		.field("User", format!("<@{user_id}>"), true);
+		)
+	};
 
 	Ok(embed)
 }
@@ -121,18 +122,18 @@ async fn process_add_role(data: &BotData, machine_name: String, role_id: RoleId)
 		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
-	if machine_info.authorized_roles.contains(&role_id) {
-		return Ok(embeds::error(
+	let embed = if machine_info.authorized_roles.insert(role_id) {
+		info!("Authorized role ID {role_id} on machine {machine_name}");
+		embeds::success("Role added","Successfully added role to the machine!")
+			.field("Machine", machine_name, true)
+			.field("Role", format!("<@&{role_id}>"), true)
+	}
+	else {
+		embeds::error(
 			"Role already added",
 			format!("Role <@&{role_id}> is already authorized for machine {machine_name}"),
-		));
-	}
-
-	machine_info.authorized_roles.insert(role_id);
-
-	let embed = embeds::success("Role added","Successfully added role to the machine!")
-		.field("Machine", machine_name, true)
-		.field("Role", format!("<@&{role_id}>"), true);
+		)
+	};
 
 	Ok(embed)
 }
@@ -164,18 +165,18 @@ async fn process_remove_role(data: &BotData, machine_name: String, role_id: Role
 		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
-	if !machine_info.authorized_roles.contains(&role_id) {
-		return Ok(embeds::error(
+	let embed = if machine_info.authorized_roles.remove(&role_id) {
+		info!("Removed authorization from role ID {role_id} on machine {machine_name}");
+		embeds::success("Role removed","Successfully removed role from the machine!")
+			.field("Machine", machine_name, true)
+			.field("Role", format!("<@&{role_id}>"), true)
+	}
+	else {
+		embeds::error(
 			"Role not found",
 			format!("Role <@&{role_id}> is not authorized for machine {machine_name}"),
-		));
-	}
-
-	machine_info.authorized_roles.retain(|&id| id != role_id);
-
-	let embed = embeds::success("Role removed","Successfully removed role from the machine!")
-		.field("Machine", machine_name, true)
-		.field("Role", format!("<@&{role_id}>"), true);
+		)
+	};
 
 	Ok(embed)
 }
