@@ -146,9 +146,9 @@ pub async fn describe_machine(
 	ctx: Context<'_>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
-	machine_name: String,
+	name: String,
 ) -> Result<(), BotError> {
-	let embed = process_describe_machine(ctx.data(), machine_name).await?;
+	let embed = process_describe_machine(ctx.data(), name).await?;
 
 	ctx.send(CreateReply::default().embed(embed)).await?;
 
