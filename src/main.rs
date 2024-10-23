@@ -1,8 +1,11 @@
 #![feature(trait_alias)]
 #![feature(let_chains)]
 
+use std::sync::Arc;
 use anyhow::Result;
 use log::{error, info, LevelFilter};
+use serenity::all::ShardManager;
+use tokio::signal;
 
 mod services;
 mod data;
@@ -26,9 +29,44 @@ async fn main() -> Result<()> {
 		}
 	};
 
+	let mut bot = bot::client(&token).await?;
+
+	tokio::spawn(graceful_shutdown(bot.shard_manager.clone()));
+
 	info!("Starting Gjallarbot v{}", env!("CARGO_PKG_VERSION"));
 
-	bot::client(&token).await?.start().await?;
+	bot.start().await?;
 
 	Ok(())
+}
+
+async fn graceful_shutdown(shard_manager: Arc<ShardManager>) {
+	let ctrl_c = async {
+		signal::ctrl_c()
+			.await
+			.expect("failed to install interrupt handler");
+	};
+
+	#[cfg(unix)]
+	let terminate = async {
+		signal::unix::signal(signal::unix::SignalKind::terminate())
+			.expect("failed to install SIGTERM handler")
+			.recv()
+			.await;
+	};
+
+	#[cfg(not(unix))]
+	let terminate = std::future::pending::<()>();
+
+	let received_shutdown = tokio::select! {
+		biased;
+		_ = ctrl_c => true,
+		_ = terminate => true,
+		else => false
+	};
+
+	if received_shutdown {
+		info!("Received signal, shutting down");
+		shard_manager.shutdown_all().await;
+	}
 }
