@@ -30,12 +30,7 @@ async fn process_add_user(data: &BotData, machine_name: String, user_id: UserId)
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			return Ok(embeds::error(
-				"Invalid Machine",
-				format!("No machine with name {machine_name} exists"),
-			));
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if machine_info.authorized_users.contains(&user_id) {
@@ -78,12 +73,7 @@ async fn process_remove_user(data: &BotData, machine_name: String, user_id: User
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			return Ok(embeds::error(
-				"Invalid Machine",
-				format!("No machine with name {machine_name} exists"),
-			));
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if !machine_info.authorized_users.contains(&user_id) {
@@ -128,12 +118,7 @@ async fn process_add_role(data: &BotData, machine_name: String, role_id: RoleId)
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			return Ok(embeds::error(
-				"Invalid Machine",
-				format!("No machine with name {machine_name} exists"),
-			));
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if machine_info.authorized_roles.contains(&role_id) {
@@ -176,12 +161,7 @@ async fn process_remove_role(data: &BotData, machine_name: String, role_id: Role
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			return Ok(embeds::error(
-				"Invalid Machine",
-				format!("No machine with name {machine_name} exists"),
-			));
-		}
+		None => return Ok(embeds::invalid_machine(&machine_name)),
 	};
 
 	if !machine_info.authorized_roles.contains(&role_id) {

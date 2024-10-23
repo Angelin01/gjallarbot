@@ -81,10 +81,7 @@ async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEm
 	{
 		let read = data.read().await;
 		if !read.wake_on_lan.contains_key(&name) {
-			return Ok(embeds::error(
-				"Invalid Machine",
-				format!("No machine with name {name} exists"),
-			));
+			return Ok(embeds::invalid_machine(&name));
 		}
 	}
 

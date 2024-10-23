@@ -21,6 +21,11 @@ pub fn info<S: AsRef<str>>(title: S, description: impl Into<String>) -> CreateEm
 	create_embed(format!("{EMOJI_INFO} {title}"), description, COLOR_INFO)
 }
 
+pub fn invalid_machine<S: AsRef<str>>(machine_name: S) -> CreateEmbed {
+	let name = machine_name.as_ref();
+	error("Invalid Machine", format!("No machine with name {name} exists"))
+}
+
 fn create_embed(title: impl Into<String>, description: impl Into<String>, color: impl Into<Colour>) -> CreateEmbed {
 	CreateEmbed::default()
 		.title(title)
