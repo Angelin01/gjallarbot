@@ -1,7 +1,8 @@
 use poise::CreateReply;
-use poise::serenity_prelude::{CreateEmbed, User, Colour};
+use poise::serenity_prelude::{CreateEmbed, User};
 use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
+use crate::embeds;
 use crate::services::wake_on_lan::MagicPacket;
 
 // Send a machine a wake up magic packet
@@ -33,13 +34,7 @@ async fn process_wake(
 
 	let machine_info = match data_write.wake_on_lan.get_mut(&machine_name) {
 		Some(info) => info,
-		None => {
-			let embed = CreateEmbed::default()
-				.title(":x: Invalid Machine")
-				.colour(Colour(0xdd2e44))
-				.description(format!("No machine with name {machine_name} exists"));
-			return Ok((embed, None));
-		}
+		None => return Ok((embeds::error("Invalid Machine", format!("No machine with name {machine_name} exists")), None)),
 	};
 
 	let mut authorized =  machine_info.authorized_users.contains(&author.id);
@@ -49,19 +44,13 @@ async fn process_wake(
 
 	let result = if authorized {
 		(
-			CreateEmbed::default()
-				.title(":white_check_mark: Machine woken")
-				.colour(Colour(0x77b255))
-				.description(format!("Machine {machine_name} woken")),
+			embeds::success("Machine woken", format!("Machine {machine_name} woken")),
 			Some(MagicPacket::from_mac(&machine_info.mac)),
 		)
 	}
 	else {
 		(
-			CreateEmbed::default()
-				.title(":x: Unauthorized")
-				.colour(Colour(0xdd2e44))
-				.description(format!("You are not authorized to wake machine {machine_name}")),
+			embeds::error("Unauthorized", format!("You are not authorized to wake machine {machine_name}")),
 			None
 		)
 	};

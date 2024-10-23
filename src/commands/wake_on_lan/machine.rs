@@ -3,6 +3,7 @@ use poise::serenity_prelude::{Colour, CreateEmbed};
 use super::autocomplete_machine_name;
 use crate::data::{BotData, BotError, Context};
 use crate::data::wake_on_lan::WakeOnLanMachineInfo;
+use crate::embeds;
 use crate::services::wake_on_lan::MacAddress;
 
 // Adds a new machine that can be woken up
@@ -23,11 +24,10 @@ async fn process_add_machine(data: &BotData, name: String, mac: String) -> Resul
 	{
 		let read = data.read().await;
 		if read.wake_on_lan.contains_key(&name) {
-			let embed = CreateEmbed::default()
-				.title(":x: Duplicate name")
-				.colour(Colour(0xdd2e44))
-				.description(format!("A machine with name {name} already exists, try a different name"));
-			return Ok(embed);
+			return Ok(embeds::error(
+				"Duplicate name",
+				format!("A machine with name {name} already exists, try a different name"),
+			));
 		}
 	}
 
@@ -35,11 +35,10 @@ async fn process_add_machine(data: &BotData, name: String, mac: String) -> Resul
 		Ok(v) => v,
 		Err(e) => {
 			let err_msg = e.to_string();
-			let embed = CreateEmbed::default()
-				.title(":x: Invalid MAC Address")
-				.colour(Colour(0xdd2e44))
-				.description(format!("Mac address {mac} is invalid: {err_msg}"));
-			return Ok(embed);
+			return Ok(embeds::error(
+				"Invalid MAC Address",
+				format!("Mac address {mac} is invalid: {err_msg}"),
+			));
 		}
 	};
 
@@ -56,10 +55,7 @@ async fn process_add_machine(data: &BotData, name: String, mac: String) -> Resul
 		});
 	}
 
-	let embed = CreateEmbed::default()
-		.title(":white_check_mark: Success")
-		.colour(Colour(0x77b255))
-		.description("Successfully added new machine!")
+	let embed = embeds::success("Success", "Successfully added new machine!")
 		.field("Name", name_field, true)
 		.field("MAC Address", mac_field, true);
 
@@ -85,11 +81,10 @@ async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEm
 	{
 		let read = data.read().await;
 		if !read.wake_on_lan.contains_key(&name) {
-			let embed = CreateEmbed::default()
-				.title(":x: Invalid Machine")
-				.colour(Colour(0xdd2e44))
-				.description(format!("No machine with name {name} exists"));
-			return Ok(embed);
+			return Ok(embeds::error(
+				"Invalid Machine",
+				format!("No machine with name {name} exists"),
+			));
 		}
 	}
 
@@ -101,10 +96,7 @@ async fn process_remove_machine(data: &BotData, name: String) -> Result<CreateEm
 		data_write.wake_on_lan.remove(&name);
 	}
 
-	let embed = CreateEmbed::default()
-		.title(":white_check_mark: Success")
-		.colour(Colour(0x77b255))
-		.description("Successfully removed machine!")
+	let embed = embeds::success("Success", "Successfully removed machine!")
 		.field("Name", name_field, true);
 
 	Ok(embed)
@@ -125,11 +117,10 @@ pub async fn list_machines(
 async fn process_list_machines(data: &BotData) -> Result<CreateEmbed, BotError> {
 	let read = data.read().await;
 	if read.wake_on_lan.is_empty() {
-		let embed = CreateEmbed::default()
-			.title(":information_source: Machine list")
-			.colour(Colour(0x55acee))
-			.description("There are no machines configured");
-		return Ok(embed);
+		return Ok(embeds::info(
+			"Machine list",
+			"There are no machines configured",
+		));
 	}
 
 	let machine_list = read.wake_on_lan.iter()
@@ -137,12 +128,10 @@ async fn process_list_machines(data: &BotData) -> Result<CreateEmbed, BotError> 
 		.collect::<Vec<String>>()
 		.join("\n");
 
-	let embed = CreateEmbed::default()
-		.title(":information_source: Machine list")
-		.colour(Colour(0x55acee))
-		.description(format!("Configured machines:\n{machine_list}"));
-
-	Ok(embed)
+	Ok(embeds::info(
+		"Machine list",
+		format!("Configured machines:\n{machine_list}"),
+	))
 }
 
 #[cfg(test)]

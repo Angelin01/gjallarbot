@@ -9,6 +9,7 @@ mod data;
 mod commands;
 mod bot;
 mod errors;
+mod embeds;
 
 #[tokio::main]
 async fn main() -> Result<()> {
