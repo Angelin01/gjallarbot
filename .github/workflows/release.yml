@@ -17,7 +17,7 @@ jobs:
           - TARGET: armv7-unknown-linux-gnueabihf
 
     name: Build and Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # For GLIBC_2.31
     env:
       TARGET: ${{ matrix.TARGET }}
     steps:
