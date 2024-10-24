@@ -51,7 +51,7 @@ jobs:
           tagName=${GITHUB_REF#refs/tags/v}
           executableName=gjallarbot
           mkdir -p dist
-          mv target/release/$executableName dist/${executableName}-v${tagName}-${TARGET}
+          mv target/$TARGET/release/$executableName dist/${executableName}-v${tagName}-${TARGET}
       - uses: actions/upload-artifact@v4
         with:
           path: ./dist
