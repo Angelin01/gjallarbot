@@ -44,5 +44,5 @@ cargo run
 
 Tests:
 ```shell
-cargo tests
+cargo test
 ```
