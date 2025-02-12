@@ -126,7 +126,7 @@ mod tests {
 		assert_eq!(
 			result,
 			Err(AddPermissionError::Machine(
-				MachineError::NonExistentMachine {
+				MachineError::DoesNotExist {
 					machine_name: "NonExistentMachine".to_string()
 				}
 			))
@@ -193,7 +193,7 @@ mod tests {
 		assert_eq!(
 			result,
 			Err(RemovePermissionError::Machine(
-				MachineError::NonExistentMachine {
+				MachineError::DoesNotExist {
 					machine_name: "NonExistentMachine".to_string()
 				}
 			))
@@ -259,7 +259,7 @@ mod tests {
 		assert_eq!(
 			result,
 			Err(AddPermissionError::Machine(
-				MachineError::NonExistentMachine {
+				MachineError::DoesNotExist {
 					machine_name: "NonExistentMachine".to_string()
 				}
 			))
@@ -326,7 +326,7 @@ mod tests {
 		assert_eq!(
 			result,
 			Err(RemovePermissionError::Machine(
-				MachineError::NonExistentMachine {
+				MachineError::DoesNotExist {
 					machine_name: "NonExistentMachine".to_string()
 				}
 			))
