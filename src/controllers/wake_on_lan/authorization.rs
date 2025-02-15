@@ -1,3 +1,4 @@
+use log::info;
 use super::{get_machine_info_mut, MachineError};
 use crate::data::BotData;
 use serenity::all::{RoleId, UserId};
@@ -43,6 +44,7 @@ pub async fn permit_user(
 	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
 
 	if machine_info.authorized_users.insert(user_id) {
+		info!("Permitted user {user_id} to wake machine {machine_name}");
 		Ok(())
 	} else {
 		Err(AddPermissionError::AlreadyAuthorized {
@@ -63,6 +65,7 @@ pub async fn revoke_user(
 	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
 
 	if machine_info.authorized_users.remove(&user_id) {
+		info!("Revoked user's {user_id} permission to wake machine {machine_name}");
 		Ok(())
 	} else {
 		Err(RemovePermissionError::AlreadyNotAuthorized {
@@ -83,6 +86,7 @@ pub async fn permit_role(
 	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
 
 	if machine_info.authorized_roles.insert(role_id) {
+		info!("Permitted role {role_id} to wake machine {machine_name}");
 		Ok(())
 	} else {
 		Err(AddPermissionError::AlreadyAuthorized {
@@ -103,6 +107,7 @@ pub async fn revoke_role(
 	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
 
 	if machine_info.authorized_roles.remove(&role_id) {
+		info!("Revoked role {role_id}'s permission to wake machine {machine_name}");
 		Ok(())
 	} else {
 		Err(RemovePermissionError::AlreadyNotAuthorized {
