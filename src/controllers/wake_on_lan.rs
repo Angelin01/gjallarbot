@@ -5,6 +5,7 @@ use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 
 mod authorization;
 mod machine;
+mod wake;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum MachineError {
