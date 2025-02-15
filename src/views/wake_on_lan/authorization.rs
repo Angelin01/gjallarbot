@@ -1,4 +1,4 @@
-use crate::controllers::wake_on_lan::authorization::AddPermissionError;
+use crate::controllers::wake_on_lan::authorization::{AddPermissionError, RemovePermissionError};
 use crate::embeds;
 use serenity::all::{CreateEmbed, UserId};
 
@@ -8,14 +8,41 @@ pub fn permit_user_embed(
 	user_id: UserId,
 ) -> CreateEmbed {
 	match result {
-		Ok(_) => embeds::success("User permitted", "Successfully permitted user to wake the machine!")
-			.field("Machine", machine_name, true)
-			.field("User", format!("<@{user_id}>"), true),
+		Ok(_) => embeds::success(
+			"User permitted",
+			"Successfully permitted user to wake the machine!",
+		)
+		.field("Machine", machine_name, true)
+		.field("User", format!("<@{user_id}>"), true),
 		Err(e) => match e {
 			AddPermissionError::Machine(_) => embeds::invalid_machine(machine_name),
 			AddPermissionError::AlreadyAuthorized { .. } => embeds::error(
 				"User already permitted",
 				format!("User <@{user_id}> is already permitted to wake machine {machine_name}"),
+			),
+		},
+	}
+}
+
+pub fn revoke_user_embed(
+	result: Result<(), RemovePermissionError>,
+	machine_name: &str,
+	user_id: UserId,
+) -> CreateEmbed {
+	match result {
+		Ok(_) => embeds::success(
+			"User permission revoked",
+			"Successfully revoked user's permission to wake the machine!",
+		)
+		.field("Machine", machine_name, true)
+		.field("User", format!("<@{user_id}>"), true),
+		Err(e) => match e {
+			RemovePermissionError::Machine(_) => embeds::invalid_machine(machine_name),
+			RemovePermissionError::AlreadyNotAuthorized { .. } => embeds::error(
+				"User not permitted",
+				format!(
+					"User <@{user_id}> is already not permitted to wake machine {machine_name}"
+				),
 			),
 		},
 	}
@@ -54,7 +81,9 @@ mod tests {
 		let expected_embed = CreateEmbed::default()
 			.title(":x: User already permitted")
 			.colour(Colour(0xdd2e44))
-			.description("User <@12345678901234567> is already permitted to wake machine SomeMachine");
+			.description(
+				"User <@12345678901234567> is already permitted to wake machine SomeMachine",
+			);
 
 		assert_eq!(embed, expected_embed);
 	}
@@ -67,6 +96,53 @@ mod tests {
 			.title(":white_check_mark: User permitted")
 			.colour(Colour(0x77b255))
 			.description("Successfully permitted user to wake the machine!")
+			.field("Machine", "SomeMachine", true)
+			.field("User", "<@12345678901234567>", true);
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_revoke_user_error_with_nonexistent_machine_then_reply_with_error_no_machine() {
+		let result = Err(RemovePermissionError::Machine(MachineError::DoesNotExist {
+			machine_name: "NonExistentMachine".to_string(),
+		}));
+		let embed = revoke_user_embed(result, "NonExistentMachine", UserId::new(12345678901234567));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Machine")
+			.colour(Colour(0xdd2e44))
+			.description("No machine with name NonExistentMachine exists");
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_revoke_user_error_with_already_unauthorized_then_reply_with_already_unauthorized() {
+		let result = Err(RemovePermissionError::AlreadyNotAuthorized {
+			machine_name: "SomeMachine".to_string(),
+			entity: Entity::User(UserId::new(76543210987654321)),
+		});
+		let embed = revoke_user_embed(result, "SomeMachine", UserId::new(76543210987654321));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: User not permitted")
+			.colour(Colour(0xdd2e44))
+			.description(
+				"User <@76543210987654321> is already not permitted to wake machine SomeMachine",
+			);
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_successful_revoke_user_then_should_reply_with_success_info() {
+		let embed = revoke_user_embed(Ok(()), "SomeMachine", UserId::new(12345678901234567));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":white_check_mark: User permission revoked")
+			.colour(Colour(0x77b255))
+			.description("Successfully revoked user's permission to wake the machine!")
 			.field("Machine", "SomeMachine", true)
 			.field("User", "<@12345678901234567>", true);
 
