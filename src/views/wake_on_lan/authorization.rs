@@ -1,0 +1,75 @@
+use crate::controllers::wake_on_lan::authorization::AddPermissionError;
+use crate::embeds;
+use serenity::all::{CreateEmbed, UserId};
+
+pub fn permit_user_embed(
+	result: Result<(), AddPermissionError>,
+	machine_name: &str,
+	user_id: UserId,
+) -> CreateEmbed {
+	match result {
+		Ok(_) => embeds::success("User permitted", "Successfully permitted user to wake the machine!")
+			.field("Machine", machine_name, true)
+			.field("User", format!("<@{user_id}>"), true),
+		Err(e) => match e {
+			AddPermissionError::Machine(_) => embeds::invalid_machine(machine_name),
+			AddPermissionError::AlreadyAuthorized { .. } => embeds::error(
+				"User already permitted",
+				format!("User <@{user_id}> is already permitted to wake machine {machine_name}"),
+			),
+		},
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::controllers::wake_on_lan::authorization::Entity;
+	use crate::controllers::wake_on_lan::MachineError;
+	use serenity::all::Colour;
+
+	#[test]
+	fn given_permit_user_error_with_nonexistent_machine_then_reply_with_error_no_machine() {
+		let result = Err(AddPermissionError::Machine(MachineError::DoesNotExist {
+			machine_name: "NonExistentMachine".to_string(),
+		}));
+		let embed = permit_user_embed(result, "NonExistentMachine", UserId::new(12345678901234567));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Machine")
+			.colour(Colour(0xdd2e44))
+			.description("No machine with name NonExistentMachine exists");
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_permit_user_error_with_already_authorized_then_reply_with_error_already_authorized() {
+		let result = Err(AddPermissionError::AlreadyAuthorized {
+			machine_name: "SomeMachine".to_string(),
+			entity: Entity::User(UserId::new(12345678901234567)),
+		});
+		let embed = permit_user_embed(result, "SomeMachine", UserId::new(12345678901234567));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: User already permitted")
+			.colour(Colour(0xdd2e44))
+			.description("User <@12345678901234567> is already permitted to wake machine SomeMachine");
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_successful_permit_user_then_should_reply_with_success_info() {
+		let embed = permit_user_embed(Ok(()), "SomeMachine", UserId::new(12345678901234567));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":white_check_mark: User permitted")
+			.colour(Colour(0x77b255))
+			.description("Successfully permitted user to wake the machine!")
+			.field("Machine", "SomeMachine", true)
+			.field("User", "<@12345678901234567>", true);
+
+		assert_eq!(embed, expected_embed);
+	}
+}

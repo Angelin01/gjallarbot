@@ -16,6 +16,7 @@ mod bot;
 mod errors;
 mod embeds;
 mod controllers;
+mod views;
 
 #[tokio::main]
 async fn main() -> Result<()> {

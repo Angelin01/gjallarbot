@@ -3,9 +3,9 @@ use tokio::sync::RwLockReadGuard;
 use crate::data::{Data, PersistentJson, PersistentWriteGuard};
 use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 
-mod authorization;
-mod machine;
-mod wake;
+pub mod authorization;
+pub mod machine;
+pub mod wake;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum MachineError {
