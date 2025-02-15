@@ -1,4 +1,4 @@
-use super::MachineError;
+use super::{get_machine_info, MachineError};
 use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 use crate::data::BotData;
 use crate::errors::InvalidMacError;
@@ -80,12 +80,7 @@ pub async fn describe_machine<F: AsyncFnOnce(&WakeOnLanMachineInfo) -> ()>(
 ) -> Result<(), MachineError> {
 	let read = data.read().await;
 
-	let machine = read
-		.wake_on_lan
-		.get(name)
-		.ok_or(MachineError::DoesNotExist {
-			machine_name: name.into(),
-		})?;
+	let machine = get_machine_info(&read, name).await?;
 
 	func.async_call_once((machine,)).await;
 

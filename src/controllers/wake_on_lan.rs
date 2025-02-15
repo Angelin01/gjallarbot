@@ -1,5 +1,6 @@
 use thiserror::Error;
-use crate::data::{Data, PersistentWriteGuard};
+use tokio::sync::RwLockReadGuard;
+use crate::data::{Data, PersistentJson, PersistentWriteGuard};
 use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 
 mod authorization;
@@ -21,6 +22,18 @@ async fn get_machine_info_mut<'a>(
 	data_write
 		.wake_on_lan
 		.get_mut(machine_name)
+		.ok_or(MachineError::DoesNotExist {
+			machine_name: machine_name.into(),
+		})
+}
+
+async fn get_machine_info<'a>(
+	data_read: &'a RwLockReadGuard<'_, PersistentJson<Data>>,
+	machine_name: &str,
+) -> Result<&'a WakeOnLanMachineInfo, MachineError> {
+	data_read
+		.wake_on_lan
+		.get(machine_name)
 		.ok_or(MachineError::DoesNotExist {
 			machine_name: machine_name.into(),
 		})
