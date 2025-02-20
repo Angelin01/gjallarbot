@@ -1,5 +1,5 @@
 use super::{get_machine_info, MachineError};
-use crate::data::wake_on_lan::WakeOnLanMachineInfo;
+use crate::data::wake_on_lan::{WakeOnLanData, WakeOnLanMachineInfo};
 use crate::data::BotData;
 use crate::errors::InvalidMacError;
 use crate::services::wake_on_lan::MacAddress;
@@ -73,18 +73,21 @@ pub async fn remove_machine(data: &BotData, name: &str) -> Result<(), RemoveMach
 	Ok(())
 }
 
-pub async fn describe_machine<F: AsyncFnOnce(&WakeOnLanMachineInfo) -> ()>(
-	data: &BotData,
-	name: &str,
-	func: F,
-) -> Result<(), MachineError> {
+pub trait ListMachinesCallback = AsyncFnOnce(&WakeOnLanData) -> ();
+pub async fn list_machines<F: ListMachinesCallback>(data: &BotData, func: F) {
 	let read = data.read().await;
 
-	let machine = get_machine_info(&read, name).await?;
+	func.async_call_once((&read.wake_on_lan,)).await;
+}
 
-	func.async_call_once((machine,)).await;
+pub trait DescribeMachineCallback =
+	AsyncFnOnce(Result<&WakeOnLanMachineInfo, MachineError>, &str) -> ();
+pub async fn describe_machine<F: DescribeMachineCallback>(data: &BotData, name: &str, func: F) {
+	let read = data.read().await;
 
-	Ok(())
+	let machine = get_machine_info(&read, name).await;
+
+	func.async_call_once((machine, name)).await;
 }
 
 #[cfg(test)]
@@ -235,7 +238,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn given_nonexistent_machine_then_describe_machine_returns_error() {
+	async fn given_wake_on_lan_data_then_list_machines_provides_correct_data_to_callback() {
 		let data = mock_data(Some(json!({
 			"wake_on_lan": {
 				"ExistingMachine": {
@@ -246,18 +249,24 @@ mod tests {
 			}
 		})));
 
-		let result = describe_machine(&data, "NonexistentMachine", async |_| {}).await;
-
-		assert_eq!(
-			result,
-			Err(MachineError::DoesNotExist {
-				machine_name: "NonexistentMachine".into(),
-			})
-		);
+		list_machines(&data, async |data| {
+			assert_eq!(
+				*data,
+				BTreeMap::from([(
+					"ExistingMachine".to_string(),
+					WakeOnLanMachineInfo {
+						mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+						authorized_users: Default::default(),
+						authorized_roles: Default::default(),
+					}
+				)])
+			)
+		})
+		.await;
 	}
 
 	#[tokio::test]
-	async fn given_existing_machine_then_describe_machine_returns_success_and_calls_function() {
+	async fn given_nonexistent_machine_then_describe_machine_callbacks_with_error() {
 		let data = mock_data(Some(json!({
 			"wake_on_lan": {
 				"ExistingMachine": {
@@ -268,18 +277,40 @@ mod tests {
 			}
 		})));
 
-		let mut called = false;
-
-		let result = describe_machine(&data, "ExistingMachine", async |machine| {
+		describe_machine(&data, "NonExistentMachine", async |result, name| {
+			assert_eq!(name, "NonExistentMachine");
 			assert_eq!(
-				machine.mac,
-				MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+				result,
+				Err(MachineError::DoesNotExist {
+					machine_name: "NonExistentMachine".into(),
+				})
 			);
-			called = true;
 		})
 		.await;
+	}
 
-		assert!(called);
-		assert_eq!(result, Ok(()));
+	#[tokio::test]
+	async fn given_existing_machine_then_describe_machine_calls_function_with_machine_info() {
+		let data = mock_data(Some(json!({
+			"wake_on_lan": {
+				"ExistingMachine": {
+					"mac": [1, 2, 3, 4, 5, 6],
+					"authorized_users": [],
+					"authorized_roles": []
+				}
+			}
+		})));
+
+		describe_machine(&data, "ExistingMachine", async |result, name| {
+			assert_eq!(name, "ExistingMachine");
+			match result {
+				Ok(machine) => assert_eq!(
+					machine.mac,
+					MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+				),
+				Err(_) => assert!(false, "received error when it was not expected"),
+			}
+		})
+		.await;
 	}
 }
