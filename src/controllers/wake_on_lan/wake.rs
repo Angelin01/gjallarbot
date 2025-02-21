@@ -17,7 +17,7 @@ pub enum WakeError {
 	Unauthorized { user: UserId, machine_name: String },
 }
 
-async fn wake<S: MagicPacketSender>(
+pub async fn wake<S: MagicPacketSender>(
 	data: &BotData,
 	author: &User,
 	machine_name: &str,

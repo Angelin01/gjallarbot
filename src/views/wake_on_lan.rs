@@ -1,3 +1,3 @@
-mod authorization;
-mod machine;
-mod wake;
+pub mod authorization;
+pub mod machine;
+pub mod wake;

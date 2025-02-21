@@ -2,7 +2,6 @@ use super::{get_machine_info, MachineError};
 use crate::data::wake_on_lan::{WakeOnLanData, WakeOnLanMachineInfo};
 use crate::data::BotData;
 use crate::errors::InvalidMacError;
-use crate::services::wake_on_lan::MacAddress;
 use log::info;
 use std::ops::AsyncFnOnce;
 use thiserror::Error;
@@ -73,27 +72,32 @@ pub async fn remove_machine(data: &BotData, name: &str) -> Result<(), RemoveMach
 	Ok(())
 }
 
-pub trait ListMachinesCallback = AsyncFnOnce(&WakeOnLanData) -> ();
-pub async fn list_machines<F: ListMachinesCallback>(data: &BotData, func: F) {
+pub trait ListMachinesCallback<T> = AsyncFnOnce(&WakeOnLanData) -> T;
+pub async fn list_machines<T, F: ListMachinesCallback<T>>(data: &BotData, func: F) -> T {
 	let read = data.read().await;
 
-	func.async_call_once((&read.wake_on_lan,)).await;
+	func.async_call_once((&read.wake_on_lan,)).await
 }
 
-pub trait DescribeMachineCallback =
-	AsyncFnOnce(Result<&WakeOnLanMachineInfo, MachineError>, &str) -> ();
-pub async fn describe_machine<F: DescribeMachineCallback>(data: &BotData, name: &str, func: F) {
+pub trait DescribeMachineCallback<T> =
+	AsyncFnOnce(Result<&WakeOnLanMachineInfo, MachineError>, &str) -> T;
+pub async fn describe_machine<T, F: DescribeMachineCallback<T>>(
+	data: &BotData,
+	name: &str,
+	func: F,
+) -> T {
 	let read = data.read().await;
 
 	let machine = get_machine_info(&read, name).await;
 
-	func.async_call_once((machine, name)).await;
+	func.async_call_once((machine, name)).await
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::data::tests::mock_data;
+	use crate::services::wake_on_lan::MacAddress;
 	use serde_json::json;
 	use std::collections::BTreeMap;
 

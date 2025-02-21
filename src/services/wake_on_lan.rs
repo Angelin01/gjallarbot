@@ -75,16 +75,6 @@ impl MagicPacket {
 
 		Self(magic_packet)
 	}
-
-	pub async fn send(&self) -> io::Result<()> {
-		let src = (Ipv4Addr::new(0, 0, 0, 0), 0);
-		let dst = (Ipv4Addr::new(255, 255, 255, 255), 9);
-		let socket = UdpSocket::bind(src).await?;
-		socket.set_broadcast(true)?;
-		socket.send_to(self.deref(), dst).await?;
-
-		Ok(())
-	}
 }
 
 impl Deref for MagicPacket {
