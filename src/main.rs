@@ -1,5 +1,7 @@
 #![feature(trait_alias)]
 #![feature(let_chains)]
+#![feature(async_closure)]
+#![feature(async_fn_traits)]
 
 use std::sync::Arc;
 use anyhow::Result;
@@ -13,6 +15,8 @@ mod commands;
 mod bot;
 mod errors;
 mod embeds;
+mod controllers;
+mod views;
 
 #[tokio::main]
 async fn main() -> Result<()> {

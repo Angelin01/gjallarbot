@@ -35,9 +35,9 @@ async fn autocomplete_machine_name(
 		.read()
 		.await
 		.wake_on_lan
-		.iter()
-		.filter(|&(name, _)| name.starts_with(partial))
+		.keys()
+		.filter(|name| name.starts_with(partial))
 		.take(DISCORD_MAX_CHOICES)
-		.map(|(name, _)| name.clone())
+		.cloned()
 		.collect()
 }
