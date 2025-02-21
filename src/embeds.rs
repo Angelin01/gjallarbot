@@ -21,6 +21,13 @@ pub fn info<S: AsRef<str>>(title: S, description: impl Into<String>) -> CreateEm
 	create_embed(format!("{EMOJI_INFO} {title}"), description, COLOR_INFO)
 }
 
+pub fn internal_error<S: AsRef<str>>(title: S, description: impl Into<String>) -> CreateEmbed {
+	pub const COLOR_INTERNAL: Colour = Colour(0xF4900C);
+	pub const EMOJI_INTERNAL: &str = ":tools:";
+	let title = title.as_ref();
+	create_embed(format!("{EMOJI_INTERNAL} {title}"), description, COLOR_INTERNAL)
+}
+
 pub fn invalid_machine<S: AsRef<str>>(machine_name: S) -> CreateEmbed {
 	let name = machine_name.as_ref();
 	error("Invalid Machine", format!("No machine with name {name} exists"))
