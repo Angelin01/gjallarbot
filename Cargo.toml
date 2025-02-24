@@ -9,20 +9,20 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.*"
-env_logger = "0.11.*"
 figment = { version = "0.10.19", default-features = false, features = ["env", "toml"] }
 log = "0.4.*"
 poise = { version = "0.6.*", default-features = false, features = ["chrono"] }
 serenity = { version = "0.12.*", default-features = false, features = ["chrono", "rustls_backend", "simd-json", "parking_lot"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.*", features = ["derive"] }
-serde_json = "1.0.*"
-thiserror = "1.0.*"
-tokio = { version = "1.41.*", features = ["macros", "parking_lot", "rt-multi-thread", "signal"] }
+serde_json = { version = "1.0.*" }
+tracing-subscriber = { version = "0.3.18", features = ["parking_lot", "env-filter"] }
+thiserror = "2.0.11"
+tokio = { version = "1.43.0", features = ["macros", "parking_lot", "rt-multi-thread", "signal"] }
 
 [profile.release]
 strip = "debuginfo"
 lto = "fat"
 
 [dev-dependencies]
-tempfile = "3.13.*"
+tempfile = "3.17.1"

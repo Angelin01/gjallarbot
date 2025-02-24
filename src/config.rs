@@ -20,9 +20,24 @@ impl Config {
 #[derive(Deserialize)]
 pub struct Config {
 	pub bot: BotConfig,
+	#[serde(default)]
+	pub log: LogConfig,
 }
 
 #[derive(Deserialize)]
 pub struct BotConfig {
 	pub token: SecretString,
+}
+
+#[derive(Deserialize)]
+pub struct LogConfig {
+	pub filter: String,
+}
+
+impl Default for LogConfig {
+	fn default() -> Self {
+		LogConfig {
+			filter: "gjallarbot=info".into(),
+		}
+	}
 }
