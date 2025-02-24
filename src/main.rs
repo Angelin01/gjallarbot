@@ -5,9 +5,10 @@
 
 use std::sync::Arc;
 use anyhow::Result;
-use log::{error, info, LevelFilter};
+use log::{info, LevelFilter};
 use serenity::all::ShardManager;
 use tokio::signal;
+use crate::config::Config;
 
 mod services;
 mod data;
@@ -17,6 +18,7 @@ mod errors;
 mod embeds;
 mod controllers;
 mod views;
+mod config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,15 +27,11 @@ async fn main() -> Result<()> {
 		.parse_env("GJ_LOG_LEVEL")
 		.init();
 
-	let token = match std::env::var("GJ_DISCORD_TOKEN") {
-		Ok(token) => token,
-		Err(e) => {
-			error!("Please configure the GJ_DISCORD_TOKEN environment variable");
-			return Err(anyhow::Error::from(e));
-		}
-	};
+	let config = Config::load()?;
 
-	let mut bot = bot::client(&token).await?;
+	let mut bot = bot::client(&config).await?;
+
+	drop(config);
 
 	tokio::spawn(graceful_shutdown(bot.shard_manager.clone()));
 
