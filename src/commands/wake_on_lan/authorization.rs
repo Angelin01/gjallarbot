@@ -14,7 +14,7 @@ pub async fn add_user(
 	machine_name: String,
 	#[description = "User that be allowed wake this machine"] user: User,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_auth::permit_user(ctx.data(), &machine_name, user.id).await;
+	let result = ctrl_wol_auth::permit_user(&ctx.data().data, &machine_name, user.id).await;
 	let embed = view_wol_auth::permit_user_embed(result, &machine_name, user.id);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -30,7 +30,7 @@ pub async fn remove_user(
 	machine_name: String,
 	#[description = "User that will no longer be allowed wake this machine"] user: User,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_auth::revoke_user(ctx.data(), &machine_name, user.id).await;
+	let result = ctrl_wol_auth::revoke_user(&ctx.data().data, &machine_name, user.id).await;
 	let embed = view_wol_auth::revoke_user_embed(result, &machine_name, user.id);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -46,7 +46,7 @@ pub async fn add_role(
 	machine_name: String,
 	#[description = "Role that be allowed wake this machine"] role: Role,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_auth::permit_role(ctx.data(), &machine_name, role.id).await;
+	let result = ctrl_wol_auth::permit_role(&ctx.data().data, &machine_name, role.id).await;
 	let embed = view_wol_auth::permit_role_embed(result, &machine_name, role.id);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -62,7 +62,7 @@ pub async fn remove_role(
 	machine_name: String,
 	#[description = "Role that will no longer be allowed wake this machine"] role: Role,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_auth::revoke_role(ctx.data(), &machine_name, role.id).await;
+	let result = ctrl_wol_auth::revoke_role(&ctx.data().data, &machine_name, role.id).await;
 	let embed = view_wol_auth::revoke_role_embed(result, &machine_name, role.id);
 
 	reply_no_mentions(ctx, embed).await?;

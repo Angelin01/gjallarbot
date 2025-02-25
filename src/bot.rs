@@ -1,6 +1,6 @@
 use crate::commands;
 use crate::config::Config;
-use crate::data::{BotData, BotError, Context, PersistentJson};
+use crate::data::{BotError, BotState, Context, PersistentJson};
 use anyhow::Result;
 use log::{debug, error};
 use poise::{serenity_prelude as serenity, BoxFuture, Framework, FrameworkOptions};
@@ -18,14 +18,14 @@ pub async fn client(config: &Config) -> Result<Client> {
 	Ok(client)
 }
 
-async fn build_framework() -> Framework<BotData, BotError> {
+async fn build_framework() -> Framework<BotState, BotError> {
 	Framework::builder()
 		.options(framework_options())
 		.setup(setup)
 		.build()
 }
 
-fn framework_options() -> FrameworkOptions<BotData, BotError> {
+fn framework_options() -> FrameworkOptions<BotState, BotError> {
 	FrameworkOptions {
 		commands: commands::commands(),
 		on_error: |error| Box::pin(on_error(error)),
@@ -40,14 +40,20 @@ fn log_replies(_: Context, reply: poise::CreateReply) -> poise::CreateReply {
 	reply
 }
 
-fn setup<'a>(ctx: &'a serenity::Context, _: &'a Ready, framework: &'a Framework<BotData, BotError>) -> BoxFuture<'a, serenity::Result<BotData, BotError>> {
+fn setup<'a>(
+	ctx: &'a serenity::Context,
+	_: &'a Ready,
+	framework: &'a Framework<BotState, BotError>,
+) -> BoxFuture<'a, serenity::Result<BotState, BotError>> {
 	Box::pin(async move {
 		poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-		Ok(Arc::new(RwLock::new(PersistentJson::new("data.json")?)))
+		Ok(BotState {
+			data: Arc::new(RwLock::new(PersistentJson::new("data.json")?)),
+		})
 	})
 }
 
-async fn on_error(error: poise::FrameworkError<'_, BotData, BotError>) {
+async fn on_error(error: poise::FrameworkError<'_, BotState, BotError>) {
 	match error {
 		poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
 		poise::FrameworkError::Command { error, ctx, .. } => {
