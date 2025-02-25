@@ -4,8 +4,7 @@ pub mod register;
 
 use poise::{Command, CreateReply, ReplyHandle};
 use serenity::all::{CreateAllowedMentions, CreateEmbed};
-use crate::data::{BotError, BotState, Context};
-
+use crate::bot::{BotError, BotState, Context};
 pub fn commands() -> Vec<Command<BotState, BotError>> {
 	let commands = vec![
 		wake_on_lan::wake_on_lan(),

@@ -2,8 +2,7 @@ mod machine;
 mod authorization;
 mod wake;
 
-use crate::data::{Context, BotError};
-
+use crate::bot::{BotError, Context};
 /// Commands related to the wake-on-lan functionality
 #[poise::command(
 	slash_command,

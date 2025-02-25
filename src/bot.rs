@@ -1,6 +1,6 @@
 use crate::commands;
 use crate::config::Config;
-use crate::data::{BotError, BotState, Context, PersistentJson};
+use crate::data::{BotData, PersistentJson};
 use anyhow::Result;
 use log::{debug, error};
 use poise::{serenity_prelude as serenity, BoxFuture, Framework, FrameworkOptions};
@@ -8,6 +8,13 @@ use secrecy::ExposeSecret;
 use serenity::{Client, Ready};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+pub struct BotState {
+	pub data: BotData,
+}
+
+pub type BotError = Box<dyn std::error::Error + Send + Sync>;
+pub type Context<'a> = poise::Context<'a, BotState, BotError>;
 
 pub async fn client(config: &Config) -> Result<Client> {
 	let intents = serenity::GatewayIntents::non_privileged();

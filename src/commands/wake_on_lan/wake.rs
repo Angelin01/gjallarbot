@@ -1,8 +1,8 @@
 use crate::commands::reply_no_mentions;
 use crate::commands::wake_on_lan::autocomplete_machine_name;
-use crate::data::{BotError, Context};
 use crate::services::wake_on_lan::UdpMagicPacketSender;
 use crate::{controllers, views};
+use crate::bot::{BotError, Context};
 
 #[poise::command(slash_command)]
 pub async fn wake(
