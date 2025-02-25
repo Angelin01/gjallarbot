@@ -1,16 +1,19 @@
 use crate::commands;
 use crate::config::Config;
 use crate::data::{BotData, PersistentJson};
+use crate::services::servitor::{HttpServitorController, ServitorController};
 use anyhow::Result;
 use log::{debug, error};
 use poise::{serenity_prelude as serenity, BoxFuture, Framework, FrameworkOptions};
 use secrecy::ExposeSecret;
 use serenity::{Client, Ready};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub struct BotState {
 	pub data: BotData,
+	pub servitor: Arc<BTreeMap<String, HttpServitorController>>,
 }
 
 pub type BotError = Box<dyn std::error::Error + Send + Sync>;
@@ -28,7 +31,15 @@ pub async fn client(config: &Config) -> Result<Client> {
 async fn build_framework() -> Framework<BotState, BotError> {
 	Framework::builder()
 		.options(framework_options())
-		.setup(setup)
+		.setup(|ctx, _, framework| {
+			Box::pin(async move {
+				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+				Ok(BotState {
+					data: Arc::new(RwLock::new(PersistentJson::new("data.json")?)),
+					servitor: Arc::new(BTreeMap::new()),
+				})
+			})
+		})
 		.build()
 }
 
@@ -45,19 +56,6 @@ fn framework_options() -> FrameworkOptions<BotState, BotError> {
 fn log_replies(_: Context, reply: poise::CreateReply) -> poise::CreateReply {
 	debug!("Replied with embeds {:?}", reply.embeds);
 	reply
-}
-
-fn setup<'a>(
-	ctx: &'a serenity::Context,
-	_: &'a Ready,
-	framework: &'a Framework<BotState, BotError>,
-) -> BoxFuture<'a, serenity::Result<BotState, BotError>> {
-	Box::pin(async move {
-		poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-		Ok(BotState {
-			data: Arc::new(RwLock::new(PersistentJson::new("data.json")?)),
-		})
-	})
 }
 
 async fn on_error(error: poise::FrameworkError<'_, BotState, BotError>) {
