@@ -1,6 +1,7 @@
-pub mod wake_on_lan;
+mod wake_on_lan;
 #[cfg(debug_assertions)]
-pub mod register;
+mod register;
+mod servitor;
 
 use poise::{Command, CreateReply, ReplyHandle};
 use serenity::all::{CreateAllowedMentions, CreateEmbed};
@@ -8,6 +9,7 @@ use crate::bot::{BotError, BotState, Context};
 pub fn commands() -> Vec<Command<BotState, BotError>> {
 	let commands = vec![
 		wake_on_lan::wake_on_lan(),
+		servitor::servitor(),
 		#[cfg(debug_assertions)] register::register(),
 	];
 

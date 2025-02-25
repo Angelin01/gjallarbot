@@ -1,12 +1,12 @@
 use crate::commands;
 use crate::config::Config;
 use crate::data::{BotData, PersistentJson};
-use crate::services::servitor::{HttpServitorController, ServitorController};
+use crate::services::servitor::{HttpServitorController};
 use anyhow::Result;
 use log::{debug, error};
-use poise::{serenity_prelude as serenity, BoxFuture, Framework, FrameworkOptions};
+use poise::{serenity_prelude as serenity, Framework, FrameworkOptions};
 use secrecy::ExposeSecret;
-use serenity::{Client, Ready};
+use serenity::{Client};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
