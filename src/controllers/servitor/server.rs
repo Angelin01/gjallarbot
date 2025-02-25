@@ -16,6 +16,12 @@ pub enum AddServerError {
 	Server(#[from] ServerError),
 }
 
+#[derive(Debug, Error, PartialEq)]
+pub enum RemoveServerError {
+	#[error(transparent)]
+	Server(#[from] ServerError),
+}
+
 pub async fn add_server<S: ServitorController>(
 	data: &BotData,
 	servitor_handlers: &BTreeMap<String, S>,
@@ -50,6 +56,27 @@ pub async fn add_server<S: ServitorController>(
 	}
 
 	info!("Added servitor server {name} with Servitor {servitor} and unit_name {unit_name}");
+
+	Ok(())
+}
+
+pub async fn remove_server(
+	data: &BotData,
+	name: &str,
+) -> Result<(), RemoveServerError> {
+	if !data.read().await.servitor.contains_key(name) {
+		return Err(ServerError::DoesNotExist {
+			server_name: name.to_string(),
+		})?;
+	}
+
+	{
+		let mut lock = data.write().await;
+		let mut data_write = lock.write();
+		data_write.servitor.remove(name);
+	}
+
+	info!("Removed servitor server {name}");
 
 	Ok(())
 }
@@ -157,5 +184,51 @@ mod tests {
 		assert_eq!(data.read().await.servitor, expected_data);
 
 		serv.values().for_each(MockServitorController::assert_not_called);
+	}
+
+	#[tokio::test]
+	async fn given_invalid_server_name_then_remove_server_returns_error_and_does_not_update_data() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"SomeServer": {
+					"servitor": "foo",
+					"unit_name": "bar"
+				}
+			}
+		})));
+
+		let result = remove_server(&data, "NonExistingServer").await;
+
+		let expected_data = BTreeMap::from([(
+			"SomeServer".to_string(),
+			ServerInfo {
+				servitor: "foo".to_string(),
+				unit_name: "bar".to_string(),
+				authorized_users: Default::default(),
+				authorized_roles: Default::default(),
+			},
+		)]);
+
+		assert_eq!(result, Err(RemoveServerError::Server(ServerError::DoesNotExist {
+			server_name: "NonExistingServer".to_string()
+		})));
+		assert_eq!(data.read().await.servitor, expected_data);
+	}
+
+	#[tokio::test]
+	async fn given_valid_input_then_remove_server_returns_success_and_removes_server() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"SomeServer": {
+					"servitor": "foo",
+					"unit_name": "bar"
+				}
+			}
+		})));
+
+		let result = remove_server(&data, "SomeServer").await;
+
+		assert_eq!(result, Ok(()));
+		assert_eq!(data.read().await.servitor, BTreeMap::new());
 	}
 }
