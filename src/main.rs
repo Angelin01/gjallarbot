@@ -3,37 +3,35 @@
 #![feature(async_closure)]
 #![feature(async_fn_traits)]
 
-use std::sync::Arc;
+use crate::config::{Config, LogConfig};
 use anyhow::Result;
-use log::{error, info, LevelFilter};
+use log::info;
 use serenity::all::ShardManager;
+use std::sync::Arc;
 use tokio::signal;
+use tracing_subscriber::filter::LevelFilter;
 
-mod services;
-mod data;
-mod commands;
 mod bot;
-mod errors;
-mod embeds;
+mod commands;
+mod config;
 mod controllers;
+mod data;
+mod embeds;
+mod errors;
+mod services;
 mod views;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-	env_logger::builder()
-		.filter_module("gjallarbot", LevelFilter::Info)
-		.parse_env("GJ_LOG_LEVEL")
-		.init();
+	let config = Config::load()?;
 
-	let token = match std::env::var("GJ_DISCORD_TOKEN") {
-		Ok(token) => token,
-		Err(e) => {
-			error!("Please configure the GJ_DISCORD_TOKEN environment variable");
-			return Err(anyhow::Error::from(e));
-		}
-	};
+	setup_logging(&config.log);
 
-	let mut bot = bot::client(&token).await?;
+	let config = Config::load()?;
+
+	let mut bot = bot::client(&config).await?;
+
+	drop(config);
 
 	tokio::spawn(graceful_shutdown(bot.shard_manager.clone()));
 
@@ -42,6 +40,13 @@ async fn main() -> Result<()> {
 	bot.start().await?;
 
 	Ok(())
+}
+
+fn setup_logging(log_config: &LogConfig) {
+	tracing_subscriber::fmt()
+		.with_max_level(LevelFilter::INFO)
+		.with_env_filter(&log_config.filter)
+		.init();
 }
 
 async fn graceful_shutdown(shard_manager: Arc<ShardManager>) {

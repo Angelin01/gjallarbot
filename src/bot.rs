@@ -1,16 +1,18 @@
-use std::sync::Arc;
-use anyhow::Result;
-use log::{debug, error, warn};
-use poise::{serenity_prelude as serenity, BoxFuture, Framework, FrameworkOptions};
-use serenity::{Client, Ready};
-use tokio::sync::RwLock;
 use crate::commands;
-use crate::data::{Context, BotData, BotError, PersistentJson};
+use crate::config::Config;
+use crate::data::{BotData, BotError, Context, PersistentJson};
+use anyhow::Result;
+use log::{debug, error};
+use poise::{serenity_prelude as serenity, BoxFuture, Framework, FrameworkOptions};
+use secrecy::ExposeSecret;
+use serenity::{Client, Ready};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-pub async fn client(token: impl AsRef<str>) -> Result<Client> {
+pub async fn client(config: &Config) -> Result<Client> {
 	let intents = serenity::GatewayIntents::non_privileged();
 
-	let client = serenity::ClientBuilder::new(token, intents)
+	let client = serenity::ClientBuilder::new(config.bot.token.expose_secret(), intents)
 		.framework(build_framework().await)
 		.await?;
 	Ok(client)
@@ -40,30 +42,6 @@ fn log_replies(_: Context, reply: poise::CreateReply) -> poise::CreateReply {
 
 fn setup<'a>(ctx: &'a serenity::Context, _: &'a Ready, framework: &'a Framework<BotData, BotError>) -> BoxFuture<'a, serenity::Result<BotData, BotError>> {
 	Box::pin(async move {
-		if cfg!(debug_assertions) {
-			if let (Ok(token), Ok(app_id), Ok(guild_id)) = (
-				std::env::var("GJ_DISCORD_TOKEN"),
-				std::env::var("GJ_APPLICATION_ID").and_then(|id| id.parse::<u64>().map_err(|_| std::env::VarError::NotPresent)),
-				std::env::var("GJ_GUILD_ID").and_then(|id| id.parse::<u64>().map_err(|_| std::env::VarError::NotPresent)),
-			) {
-				let http_client = serenity::http::Http::new(&token);
-				http_client.set_application_id(serenity::ApplicationId::new(app_id));
-
-				if let Err(err) = poise::builtins::register_in_guild(
-					&http_client,
-					&framework.options().commands,
-					serenity::GuildId::new(guild_id),
-				).await {
-					warn!("Failed to register commands in guild: {:?}", err);
-				}
-			} else {
-				warn!(
-					"In debug mode, but variables GJ_APPLICATION_ID and GJ_GUILD_ID are not set. \
-					 Configure these to quickly register commands in a guild for debugging."
-				);
-			}
-		}
-
 		poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 		Ok(Arc::new(RwLock::new(PersistentJson::new("data.json")?)))
 	})
