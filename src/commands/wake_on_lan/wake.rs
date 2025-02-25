@@ -14,7 +14,7 @@ pub async fn wake(
 	const SENDER: UdpMagicPacketSender = UdpMagicPacketSender {};
 
 	let result =
-		controllers::wake_on_lan::wake::wake(ctx.data(), ctx.author(), &name, &SENDER).await;
+		controllers::wake_on_lan::wake::wake(&ctx.data().data, ctx.author(), &name, &SENDER).await;
 
 	let embed = views::wake_on_lan::wake::wake_embed(result, &name);
 

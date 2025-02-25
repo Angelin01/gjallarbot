@@ -32,6 +32,7 @@ async fn autocomplete_machine_name(
 	const DISCORD_MAX_CHOICES: usize = 25;
 
 	ctx.data()
+		.data
 		.read()
 		.await
 		.wake_on_lan

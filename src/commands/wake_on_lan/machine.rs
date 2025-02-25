@@ -11,7 +11,7 @@ pub async fn add_machine(
 	#[description = "Machine name"] name: String,
 	#[description = "Machine MAC Address as hex digits separated by :"] mac: String,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_mch::add_machine(ctx.data(), &name, &mac).await;
+	let result = ctrl_wol_mch::add_machine(&&ctx.data().data, &name, &mac).await;
 	let embed = view_wol_mch::add_machine_embed(result, &name, &mac);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -26,7 +26,7 @@ pub async fn remove_machine(
 	#[autocomplete = "autocomplete_machine_name"]
 	name: String,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_mch::remove_machine(ctx.data(), &name).await;
+	let result = ctrl_wol_mch::remove_machine(&ctx.data().data, &name).await;
 	let embed = view_wol_mch::remove_machine_embed(result, &name);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -36,7 +36,7 @@ pub async fn remove_machine(
 
 #[poise::command(slash_command, rename = "list-machines")]
 pub async fn list_machines(ctx: Context<'_>) -> Result<(), BotError> {
-	let embed = ctrl_wol_mch::list_machines(ctx.data(), async |info| {
+	let embed = ctrl_wol_mch::list_machines(&ctx.data().data, async |info| {
 		view_wol_mch::list_machines_embed(info)
 	})
 	.await;
@@ -53,7 +53,7 @@ pub async fn describe_machine(
 	#[autocomplete = "autocomplete_machine_name"]
 	name: String,
 ) -> Result<(), BotError> {
-	let embed = ctrl_wol_mch::describe_machine(ctx.data(), &name, async |result, name| {
+	let embed = ctrl_wol_mch::describe_machine(&ctx.data().data, &name, async |result, name| {
 		view_wol_mch::describe_machine_embed(result, &name)
 	})
 	.await;
