@@ -3,9 +3,10 @@ use crate::controllers::servitor::server::AddServerError::InvalidServitor;
 use crate::data::BotData;
 use crate::services::servitor::ServitorController;
 use std::collections::BTreeMap;
+use std::ops::AsyncFnOnce;
 use log::info;
 use thiserror::Error;
-use crate::data::servitor::ServerInfo;
+use crate::data::servitor::{ServerInfo, ServitorData};
 
 #[derive(Debug, Error, PartialEq)]
 pub enum AddServerError {
@@ -79,6 +80,13 @@ pub async fn remove_server(
 	info!("Removed servitor server {name}");
 
 	Ok(())
+}
+
+pub trait ListServersCallback<T> = AsyncFnOnce(&ServitorData) -> T;
+pub async fn list_servers<T, F: ListServersCallback<T>>(data: &BotData, func: F) -> T {
+	let read = data.read().await;
+
+	func.async_call_once((&read.servitor,)).await
 }
 
 #[cfg(test)]
@@ -230,5 +238,33 @@ mod tests {
 
 		assert_eq!(result, Ok(()));
 		assert_eq!(data.read().await.servitor, BTreeMap::new());
+	}
+
+	#[tokio::test]
+	async fn given_servitor_data_then_list_servers_provides_correct_data_to_callback() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"SomeServer": {
+					"servitor": "foo",
+					"unit_name": "bar"
+				}
+			}
+		})));
+
+		list_servers(&data, async |data| {
+			assert_eq!(
+				*data,
+				BTreeMap::from([(
+					"SomeServer".to_string(),
+					ServerInfo {
+						servitor: "foo".to_string(),
+						unit_name: "bar".to_string(),
+						authorized_users: Default::default(),
+						authorized_roles: Default::default(),
+					}
+				)])
+			)
+		})
+		.await;
 	}
 }
