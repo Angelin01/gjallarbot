@@ -1,12 +1,12 @@
-use super::ServerError;
+use super::{get_server_info, ServerError};
 use crate::controllers::servitor::server::AddServerError::InvalidServitor;
+use crate::data::servitor::{ServerInfo, ServitorData};
 use crate::data::BotData;
 use crate::services::servitor::ServitorController;
+use log::info;
 use std::collections::BTreeMap;
 use std::ops::AsyncFnOnce;
-use log::info;
 use thiserror::Error;
-use crate::data::servitor::{ServerInfo, ServitorData};
 
 #[derive(Debug, Error, PartialEq)]
 pub enum AddServerError {
@@ -52,7 +52,7 @@ pub async fn add_server<S: ServitorController>(
 				unit_name: unit_name.to_string(),
 				authorized_users: Default::default(),
 				authorized_roles: Default::default(),
-			}
+			},
 		);
 	}
 
@@ -61,10 +61,7 @@ pub async fn add_server<S: ServitorController>(
 	Ok(())
 }
 
-pub async fn remove_server(
-	data: &BotData,
-	name: &str,
-) -> Result<(), RemoveServerError> {
+pub async fn remove_server(data: &BotData, name: &str) -> Result<(), RemoveServerError> {
 	if !data.read().await.servitor.contains_key(name) {
 		return Err(ServerError::DoesNotExist {
 			server_name: name.to_string(),
@@ -87,6 +84,19 @@ pub async fn list_servers<T, F: ListServersCallback<T>>(data: &BotData, func: F)
 	let read = data.read().await;
 
 	func.async_call_once((&read.servitor,)).await
+}
+
+pub trait DescribeServerCallback<T> = AsyncFnOnce(Result<&ServerInfo, ServerError>, &str) -> T;
+pub async fn describe_server<T, F: DescribeServerCallback<T>>(
+	data: &BotData,
+	name: &str,
+	func: F,
+) -> T {
+	let read = data.read().await;
+
+	let server = get_server_info(&read, name).await;
+
+	func.async_call_once((server, name)).await
 }
 
 #[cfg(test)]
@@ -266,5 +276,52 @@ mod tests {
 			)
 		})
 		.await;
+	}
+
+	#[tokio::test]
+	async fn given_nonexistent_server_then_describe_server_callbacks_with_error() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"SomeServer": {
+					"servitor": "foo",
+					"unit_name": "bar"
+				}
+			}
+		})));
+
+		describe_server(&data, "NonExistingServer", async |result, name| {
+			assert_eq!(name, "NonExistingServer");
+			assert_eq!(
+				result,
+				Err(ServerError::DoesNotExist {
+					server_name: "NonExistingServer".to_string()
+				})
+			)
+		}).await;
+	}
+
+	#[tokio::test]
+	async fn given_existing_server_then_describe_server_calls_function_with_server_info() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"SomeServer": {
+					"servitor": "foo",
+					"unit_name": "bar"
+				}
+			}
+		})));
+
+		describe_server(&data, "SomeServer", async |result, name| {
+			assert_eq!(name, "SomeServer");
+			match result {
+				Ok(server) => assert_eq!(server, &ServerInfo {
+					servitor: "foo".to_string(),
+					unit_name: "bar".to_string(),
+					authorized_users: Default::default(),
+					authorized_roles: Default::default(),
+				}),
+				Err(_) => assert!(false, "received error when it was not expected"),
+			}
+		}).await;
 	}
 }
