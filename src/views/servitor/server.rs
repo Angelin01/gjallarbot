@@ -1,4 +1,5 @@
 use crate::controllers::servitor::server::{AddServerError, RemoveServerError};
+use crate::data::servitor::ServitorData;
 use crate::embeds;
 use serenity::builder::CreateEmbed;
 
@@ -37,10 +38,27 @@ pub fn remove_server_embed(
 	}
 }
 
+pub fn list_servers_embed(servitor_data: &ServitorData) -> CreateEmbed {
+	let description = if servitor_data.is_empty() {
+		"There are no servitor servers configured".to_string()
+	} else {
+		let server_list = servitor_data
+			.iter()
+			.map(|(name, info)| format!("- {}: {} - `{}`", name, info.servitor, info.unit_name))
+			.collect::<Vec<String>>()
+			.join("\n");
+		format!("Configured servers:\n{server_list}")
+	};
+
+	embeds::info("Servitor server list", description)
+
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::controllers::servitor::ServerError;
+	use crate::data::servitor::ServerInfo;
 	use serenity::all::Colour;
 
 	#[test]
@@ -117,6 +135,66 @@ mod tests {
 			.colour(Colour(0x77b255))
 			.description("Successfully removed server")
 			.field("Name", "SomeServer", true);
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_no_servers_then_list_servers_replies_with_empty_response() {
+		let embed = list_servers_embed(&ServitorData::new());
+
+		let expected_embed = CreateEmbed::default()
+			.title(":information_source: Servitor server list")
+			.colour(Colour(0x55acee))
+			.description("There are no servitor servers configured");
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_some_servers_then_list_servers_replies_with_formatted_list() {
+		let data = ServitorData::from([
+			(
+				"ServerOne".to_string(),
+				ServerInfo {
+					servitor: "ServitorOne".to_string(),
+					unit_name: "unit_one.service".to_string(),
+					authorized_users: Default::default(),
+					authorized_roles: Default::default(),
+				},
+			),
+			(
+				"ServerTwo".to_string(),
+				ServerInfo {
+					servitor: "ServitorTwo".to_string(),
+					unit_name: "unit_two.service".to_string(),
+					authorized_users: Default::default(),
+					authorized_roles: Default::default(),
+				},
+			),
+			(
+				"ServerThree".to_string(),
+				ServerInfo {
+					servitor: "ServitorThree".to_string(),
+					unit_name: "unit_three.service".to_string(),
+					authorized_users: Default::default(),
+					authorized_roles: Default::default(),
+				},
+			),
+		]);
+
+		let embed = list_servers_embed(&data);
+
+		let expected_embed = CreateEmbed::default()
+			.title(":information_source: Servitor server list")
+			.colour(Colour(0x55acee))
+			// Order is not important here, so we adjust the test to match output order based on data
+			.description(
+				"Configured servers:\n\
+- ServerOne: ServitorOne - `unit_one.service`\n\
+- ServerThree: ServitorThree - `unit_three.service`\n\
+- ServerTwo: ServitorTwo - `unit_two.service`",
+			);
 
 		assert_eq!(embed, expected_embed);
 	}
