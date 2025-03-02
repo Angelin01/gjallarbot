@@ -92,6 +92,27 @@ pub async fn permit_role(
 	}
 }
 
+pub async fn revoke_role(
+	data: &BotData,
+	server_name: &str,
+	role_id: RoleId,
+) -> Result<(), RemovePermissionError> {
+	let mut lock = data.write().await;
+	let mut data_write = lock.write();
+
+	let server_info = get_server_info_mut(&mut data_write, server_name).await?;
+
+	if server_info.authorized_roles.remove(&role_id) {
+		info!("Revoked role {role_id}'s permission to operate server {server_name}");
+		Ok(())
+	} else {
+		Err(RemovePermissionError::AlreadyNotAuthorized {
+			server_name: server_name.to_string(),
+			entity: DiscordEntity::Role(role_id),
+		})
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -296,6 +317,72 @@ mod tests {
 		assert_eq!(result, Ok(()));
 
 		assert!(data.read().await.servitor["ExistingServer"]
+			.authorized_roles
+			.contains(&RoleId::new(98765432109876543)));
+	}
+
+	#[tokio::test]
+	async fn given_non_existing_server_then_revoke_role_returns_error_and_does_not_modify_data() {
+		let data = mock_data(None);
+
+		let result = revoke_role(&data, "NonExistentServer", RoleId::new(98765432109876543)).await;
+
+		assert_eq!(
+			result,
+			Err(RemovePermissionError::Server(ServerError::DoesNotExist {
+				server_name: "NonExistentServer".to_string()
+			}))
+		);
+		assert!(data.read().await.servitor.is_empty());
+	}
+
+	#[tokio::test]
+	async fn given_not_authorized_role_then_revoke_role_returns_error_and_does_not_modify_data() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"ExistingServer": {
+					"servitor": "foo",
+					"unit_name": "bar",
+					"authorized_users": [],
+					"authorized_roles": [98765432109876543u64]
+				}
+			}
+		})));
+
+		let result = revoke_role(&data, "ExistingServer", RoleId::new(11223344556677889)).await;
+
+		assert_eq!(
+			result,
+			Err(RemovePermissionError::AlreadyNotAuthorized {
+				server_name: "ExistingServer".to_string(),
+				entity: DiscordEntity::Role(RoleId::new(11223344556677889))
+			})
+		);
+		assert_eq!(
+			data.read().await.servitor["ExistingServer"]
+				.authorized_roles
+				.len(),
+			1
+		);
+	}
+
+	#[tokio::test]
+	async fn given_authorized_role_then_revoke_role_returns_success_and_removes_role() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"ExistingServer": {
+					"servitor": "foo",
+					"unit_name": "bar",
+					"authorized_users": [],
+					"authorized_roles": [98765432109876543u64]
+				}
+			}
+		})));
+
+		let result = revoke_role(&data, "ExistingServer", RoleId::new(98765432109876543)).await;
+
+		assert_eq!(result, Ok(()));
+		assert!(!data.read().await.servitor["ExistingServer"]
 			.authorized_roles
 			.contains(&RoleId::new(98765432109876543)));
 	}
