@@ -2,7 +2,7 @@ use super::super::DiscordEntity;
 use super::{get_server_info_mut, ServerError};
 use crate::data::BotData;
 use log::info;
-use serenity::all::UserId;
+use serenity::all::{RoleId, UserId};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -67,6 +67,27 @@ pub async fn revoke_user(
 		Err(RemovePermissionError::AlreadyNotAuthorized {
 			server_name: server_name.to_string(),
 			entity: DiscordEntity::User(user_id),
+		})
+	}
+}
+
+pub async fn permit_role(
+	data: &BotData,
+	server_name: &str,
+	role_id: RoleId,
+) -> Result<(), AddPermissionError> {
+	let mut lock = data.write().await;
+	let mut data_write = lock.write();
+
+	let server_info = get_server_info_mut(&mut data_write, server_name).await?;
+
+	if server_info.authorized_roles.insert(role_id) {
+		info!("Permitted role {role_id} to operate server {server_name}");
+		Ok(())
+	} else {
+		Err(AddPermissionError::AlreadyAuthorized {
+			server_name: server_name.into(),
+			entity: DiscordEntity::Role(role_id),
 		})
 	}
 }
@@ -209,5 +230,73 @@ mod tests {
 		assert!(!data.read().await.servitor["ExistingServer"]
 			.authorized_users
 			.contains(&UserId::new(12345678901234567)));
+	}
+
+	#[tokio::test]
+	async fn given_non_existing_server_then_permit_role_returns_error_and_does_not_modify_data() {
+		let data = mock_data(None);
+
+		let result = permit_role(&data, "NonExistentServer", RoleId::new(98765432109876543)).await;
+
+		assert_eq!(
+			result,
+			Err(AddPermissionError::Server(ServerError::DoesNotExist {
+				server_name: "NonExistentServer".to_string()
+			}))
+		);
+		assert!(data.read().await.servitor.is_empty());
+	}
+
+	#[tokio::test]
+	async fn given_already_authorized_role_then_permit_role_returns_error_and_does_not_modify_data()
+	{
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"ExistingServer": {
+					"servitor": "foo",
+					"unit_name": "bar",
+					"authorized_users": [],
+					"authorized_roles": [98765432109876543u64]
+				}
+			}
+		})));
+
+		let result = permit_role(&data, "ExistingServer", RoleId::new(98765432109876543)).await;
+
+		assert_eq!(
+			result,
+			Err(AddPermissionError::AlreadyAuthorized {
+				server_name: "ExistingServer".to_string(),
+				entity: DiscordEntity::Role(RoleId::new(98765432109876543u64))
+			})
+		);
+		assert_eq!(
+			data.read().await.servitor["ExistingServer"]
+				.authorized_roles
+				.len(),
+			1
+		);
+	}
+
+	#[tokio::test]
+	async fn given_new_role_then_permit_role_returns_success_and_adds_role() {
+		let data = mock_data(Some(json!({
+			"servitor": {
+				"ExistingServer": {
+					"servitor": "foo",
+					"unit_name": "bar",
+					"authorized_users": [],
+					"authorized_roles": []
+				}
+			}
+		})));
+
+		let result = permit_role(&data, "ExistingServer", RoleId::new(98765432109876543)).await;
+
+		assert_eq!(result, Ok(()));
+
+		assert!(data.read().await.servitor["ExistingServer"]
+			.authorized_roles
+			.contains(&RoleId::new(98765432109876543)));
 	}
 }
