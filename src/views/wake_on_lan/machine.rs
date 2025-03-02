@@ -1,5 +1,4 @@
-use std::collections::BTreeSet;
-use std::fmt::Display;
+use super::super::format_list;
 use crate::controllers::wake_on_lan::machine::{AddMachineError, RemoveMachineError};
 use crate::controllers::wake_on_lan::MachineError;
 use crate::data::wake_on_lan::{WakeOnLanData, WakeOnLanMachineInfo};
@@ -77,14 +76,6 @@ pub fn describe_machine_embed(
 			)
 		},
 		Err(_) => embeds::invalid_machine(machine_name),
-	}
-}
-
-fn format_list<T: Display, F: Fn(&T) -> String>(list: &BTreeSet<T>, formatter: F) -> String {
-	if list.is_empty() {
-		"None".to_string()
-	} else {
-		list.iter().map(formatter).collect::<Vec<_>>().join(", ")
 	}
 }
 
