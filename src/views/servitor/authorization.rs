@@ -74,6 +74,31 @@ pub fn permit_role_embed(
 	}
 }
 
+pub fn revoke_role_embed(
+	result: Result<(), RemovePermissionError>,
+	server_name: &str,
+	role_id: RoleId,
+) -> CreateEmbed {
+	match result {
+		Ok(_) => embeds::success(
+			"Role permission revoked",
+			"Successfully revoked role's permission to operate the Servitor server!",
+		)
+			.field("Servitor server", server_name, true)
+			.field("Role", format!("<@&{role_id}>"), true),
+
+		Err(e) => match e {
+			RemovePermissionError::Server(_) => embeds::invalid_servitor_server(server_name),
+			RemovePermissionError::AlreadyNotAuthorized { .. } => embeds::error(
+				"Role not permitted",
+				format!(
+					"Role <@&{role_id}> is already not permitted to operate Servitor server {server_name}"
+				),
+			),
+		},
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -218,6 +243,53 @@ mod tests {
 			.description("Successfully permitted role to operate the Servitor server!")
 			.field("Servitor server", "SomeServer", true)
 			.field("Role", "<@&987654321098765432>", true);
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_revoke_role_error_with_nonexistent_server_then_reply_with_error_no_server() {
+		let result = Err(RemovePermissionError::Server(ServerError::DoesNotExist {
+			server_name: "NonExistentServer".to_string(),
+		}));
+		let embed = revoke_role_embed(result, "NonExistentServer", RoleId::new(12345678901234567));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Servitor server")
+			.colour(Colour(0xdd2e44))
+			.description("No Servitor server with name NonExistentServer exists");
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_revoke_role_error_with_already_unauthorized_then_reply_with_already_unauthorized() {
+		let result = Err(RemovePermissionError::AlreadyNotAuthorized {
+			server_name: "SomeServer".to_string(),
+			entity: DiscordEntity::Role(RoleId::new(76543210987654321)),
+		});
+		let embed = revoke_role_embed(result, "SomeServer", RoleId::new(76543210987654321));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Role not permitted")
+			.colour(Colour(0xdd2e44))
+			.description(
+				"Role <@&76543210987654321> is already not permitted to operate Servitor server SomeServer",
+			);
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_successful_revoke_role_then_should_reply_with_success_info() {
+		let embed = revoke_role_embed(Ok(()), "SomeServer", RoleId::new(12345678901234567));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":white_check_mark: Role permission revoked")
+			.colour(Colour(0x77b255))
+			.description("Successfully revoked role's permission to operate the Servitor server!")
+			.field("Servitor server", "SomeServer", true)
+			.field("Role", "<@&12345678901234567>", true);
 
 		assert_eq!(embed, expected_embed);
 	}
