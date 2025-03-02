@@ -3,7 +3,7 @@ use crate::data::{Data, PersistentJson, PersistentWriteGuard};
 use thiserror::Error;
 use tokio::sync::RwLockReadGuard;
 
-mod authorization;
+pub mod authorization;
 pub mod server;
 
 #[derive(Debug, Error, PartialEq)]
