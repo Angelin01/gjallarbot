@@ -1,6 +1,6 @@
 use crate::controllers::servitor::authorization::{AddPermissionError, RemovePermissionError};
 use crate::embeds;
-use serenity::all::UserId;
+use serenity::all::{RoleId, UserId};
 use serenity::builder::CreateEmbed;
 
 pub fn permit_user_embed(
@@ -43,6 +43,31 @@ pub fn revoke_user_embed(
 				"User not permitted",
 				format!(
 					"User <@{user_id}> is already not permitted to operate Servitor server {server_name}"
+				),
+			),
+		},
+	}
+}
+
+pub fn permit_role_embed(
+	result: Result<(), AddPermissionError>,
+	server_name: &str,
+	role_id: RoleId,
+) -> CreateEmbed {
+	match result {
+		Ok(_) => embeds::success(
+			"Role permitted",
+			"Successfully permitted role to operate the Servitor server!",
+		)
+			.field("Servitor server", server_name, true)
+			.field("Role", format!("<@&{role_id}>"), true),
+
+		Err(e) => match e {
+			AddPermissionError::Server(_) => embeds::invalid_servitor_server(server_name),
+			AddPermissionError::AlreadyAuthorized { .. } => embeds::error(
+				"Role already permitted",
+				format!(
+					"Role <@&{role_id}> is already permitted to operate Servitor server {server_name}"
 				),
 			),
 		},
@@ -146,6 +171,53 @@ mod tests {
 			.description("Successfully revoked user's permission to operate the Servitor server!")
 			.field("Servitor server", "SomeServer", true)
 			.field("User", "<@12345678901234567>", true);
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_permit_role_error_with_nonexistent_server_then_reply_with_error_no_server() {
+		let result = Err(AddPermissionError::Server(ServerError::DoesNotExist {
+			server_name: "NonExistingServer".to_string(),
+		}));
+		let embed = permit_role_embed(result, "NonExistingServer", RoleId::new(987654321098765432));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Invalid Servitor server")
+			.colour(Colour(0xdd2e44))
+			.description("No Servitor server with name NonExistingServer exists");
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_permit_role_error_with_already_authorized_then_reply_with_error_already_authorized() {
+		let result = Err(AddPermissionError::AlreadyAuthorized {
+			server_name: "SomeServer".to_string(),
+			entity: DiscordEntity::Role(RoleId::new(987654321098765432)),
+		});
+		let embed = permit_role_embed(result, "SomeServer", RoleId::new(987654321098765432));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":x: Role already permitted")
+			.colour(Colour(0xdd2e44))
+			.description(
+				"Role <@&987654321098765432> is already permitted to operate Servitor server SomeServer",
+			);
+
+		assert_eq!(embed, expected_embed);
+	}
+
+	#[test]
+	fn given_successful_permit_role_then_should_reply_with_success_info() {
+		let embed = permit_role_embed(Ok(()), "SomeServer", RoleId::new(987654321098765432));
+
+		let expected_embed = CreateEmbed::default()
+			.title(":white_check_mark: Role permitted")
+			.colour(Colour(0x77b255))
+			.description("Successfully permitted role to operate the Servitor server!")
+			.field("Servitor server", "SomeServer", true)
+			.field("Role", "<@&987654321098765432>", true);
 
 		assert_eq!(embed, expected_embed);
 	}
