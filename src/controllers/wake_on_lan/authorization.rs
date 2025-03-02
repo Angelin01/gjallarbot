@@ -1,14 +1,9 @@
-use log::info;
+use super::super::DiscordEntity;
 use super::{get_machine_info_mut, MachineError};
 use crate::data::BotData;
+use log::info;
 use serenity::all::{RoleId, UserId};
 use thiserror::Error;
-
-#[derive(Debug, PartialEq)]
-pub enum Entity {
-	User(UserId),
-	Role(RoleId),
-}
 
 #[derive(Debug, Error, PartialEq)]
 pub enum AddPermissionError {
@@ -18,7 +13,7 @@ pub enum AddPermissionError {
 	#[error("{entity:?} is already permitted to wake machine {machine_name}")]
 	AlreadyAuthorized {
 		machine_name: String,
-		entity: Entity,
+		entity: DiscordEntity,
 	},
 }
 
@@ -30,7 +25,7 @@ pub enum RemovePermissionError {
 	#[error("{entity:?} is already not permitted to wake machine {machine_name}")]
 	AlreadyNotAuthorized {
 		machine_name: String,
-		entity: Entity,
+		entity: DiscordEntity,
 	},
 }
 
@@ -49,7 +44,7 @@ pub async fn permit_user(
 	} else {
 		Err(AddPermissionError::AlreadyAuthorized {
 			machine_name: machine_name.into(),
-			entity: Entity::User(user_id),
+			entity: DiscordEntity::User(user_id),
 		})
 	}
 }
@@ -70,7 +65,7 @@ pub async fn revoke_user(
 	} else {
 		Err(RemovePermissionError::AlreadyNotAuthorized {
 			machine_name: machine_name.into(),
-			entity: Entity::User(user_id),
+			entity: DiscordEntity::User(user_id),
 		})
 	}
 }
@@ -91,7 +86,7 @@ pub async fn permit_role(
 	} else {
 		Err(AddPermissionError::AlreadyAuthorized {
 			machine_name: machine_name.into(),
-			entity: Entity::Role(role_id),
+			entity: DiscordEntity::Role(role_id),
 		})
 	}
 }
@@ -112,7 +107,7 @@ pub async fn revoke_role(
 	} else {
 		Err(RemovePermissionError::AlreadyNotAuthorized {
 			machine_name: machine_name.into(),
-			entity: Entity::Role(role_id),
+			entity: DiscordEntity::Role(role_id),
 		})
 	}
 }
@@ -130,11 +125,9 @@ mod tests {
 
 		assert_eq!(
 			result,
-			Err(AddPermissionError::Machine(
-				MachineError::DoesNotExist {
-					machine_name: "NonExistentMachine".to_string()
-				}
-			))
+			Err(AddPermissionError::Machine(MachineError::DoesNotExist {
+				machine_name: "NonExistentMachine".to_string()
+			}))
 		);
 		assert!(data.read().await.wake_on_lan.is_empty());
 	}
@@ -158,7 +151,7 @@ mod tests {
 			result,
 			Err(AddPermissionError::AlreadyAuthorized {
 				machine_name: "ExistingMachine".to_string(),
-				entity: Entity::User(UserId::new(12345678901234567)),
+				entity: DiscordEntity::User(UserId::new(12345678901234567)),
 			})
 		);
 		assert_eq!(
@@ -197,11 +190,9 @@ mod tests {
 
 		assert_eq!(
 			result,
-			Err(RemovePermissionError::Machine(
-				MachineError::DoesNotExist {
-					machine_name: "NonExistentMachine".to_string()
-				}
-			))
+			Err(RemovePermissionError::Machine(MachineError::DoesNotExist {
+				machine_name: "NonExistentMachine".to_string()
+			}))
 		);
 		assert!(data.read().await.wake_on_lan.is_empty());
 	}
@@ -224,7 +215,7 @@ mod tests {
 			result,
 			Err(RemovePermissionError::AlreadyNotAuthorized {
 				machine_name: "ExistingMachine".to_string(),
-				entity: Entity::User(UserId::new(76543210987654321))
+				entity: DiscordEntity::User(UserId::new(76543210987654321))
 			})
 		);
 		assert_eq!(
@@ -263,11 +254,9 @@ mod tests {
 
 		assert_eq!(
 			result,
-			Err(AddPermissionError::Machine(
-				MachineError::DoesNotExist {
-					machine_name: "NonExistentMachine".to_string()
-				}
-			))
+			Err(AddPermissionError::Machine(MachineError::DoesNotExist {
+				machine_name: "NonExistentMachine".to_string()
+			}))
 		);
 		assert!(data.read().await.wake_on_lan.is_empty());
 	}
@@ -291,7 +280,7 @@ mod tests {
 			result,
 			Err(AddPermissionError::AlreadyAuthorized {
 				machine_name: "ExistingMachine".to_string(),
-				entity: Entity::Role(RoleId::new(98765432109876543))
+				entity: DiscordEntity::Role(RoleId::new(98765432109876543))
 			})
 		);
 		assert_eq!(
@@ -330,11 +319,9 @@ mod tests {
 
 		assert_eq!(
 			result,
-			Err(RemovePermissionError::Machine(
-				MachineError::DoesNotExist {
-					machine_name: "NonExistentMachine".to_string()
-				}
-			))
+			Err(RemovePermissionError::Machine(MachineError::DoesNotExist {
+				machine_name: "NonExistentMachine".to_string()
+			}))
 		);
 		assert!(data.read().await.wake_on_lan.is_empty());
 	}
@@ -357,7 +344,7 @@ mod tests {
 			result,
 			Err(RemovePermissionError::AlreadyNotAuthorized {
 				machine_name: "ExistingMachine".to_string(),
-				entity: Entity::Role(RoleId::new(98765432109876543))
+				entity: DiscordEntity::Role(RoleId::new(98765432109876543))
 			})
 		);
 		assert_eq!(
