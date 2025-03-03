@@ -125,9 +125,7 @@ mod tests {
 			})
 		);
 		assert_eq!(data.read().await.servitor, BTreeMap::new());
-		for s in serv.values() {
-			s.assert_not_called().await;
-		}
+		serv.values().for_each(|s| s.assert_not_called());
 	}
 
 	#[tokio::test]
@@ -162,9 +160,7 @@ mod tests {
 		);
 		assert_eq!(data.read().await.servitor, expected_data);
 
-		for s in serv.values() {
-			s.assert_not_called().await;
-		}
+		serv.values().for_each(|s| s.assert_not_called());
 	}
 
 	#[tokio::test]
@@ -205,9 +201,7 @@ mod tests {
 		assert_eq!(result, Ok(()));
 		assert_eq!(data.read().await.servitor, expected_data);
 
-		for s in serv.values() {
-			s.assert_not_called().await;
-		}
+		serv.values().for_each(|s| s.assert_not_called());
 	}
 
 	#[tokio::test]

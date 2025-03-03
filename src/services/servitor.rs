@@ -199,11 +199,11 @@ pub mod tests {
 			}
 		}
 
-		pub async fn assert_not_called(&self) {
-			self.assert_called_times(0, 0, 0, 0, 0).await;
+		pub fn assert_not_called(&self) {
+			self.assert_called_times(0, 0, 0, 0, 0);
 		}
 
-		pub async fn assert_called_times(
+		pub fn assert_called_times(
 			&self,
 			start: usize,
 			stop: usize,
