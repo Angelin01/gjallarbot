@@ -5,6 +5,7 @@ use tokio::sync::RwLockReadGuard;
 
 pub mod authorization;
 pub mod server;
+pub mod action;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum ServerError {

@@ -1,0 +1,136 @@
+use crate::controllers::servitor::{get_server_info, ServerError};
+use crate::data::BotData;
+use crate::services::servitor::{ServitorController, ServitorError};
+use std::collections::BTreeMap;
+use std::ops::{AsyncFnOnce};
+use log::info;
+use serenity::all::{User, UserId};
+use thiserror::Error;
+use crate::data::servitor::ServerInfo;
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ExecuteServitorActionError {
+	#[error(transparent)]
+	Server(#[from] ServerError),
+
+	#[error("the configured Servitor instance {servitor_name} for server {server_name} no longer exists")]
+	InvalidServitor {
+		server_name: String,
+		servitor_name: String,
+	},
+
+	#[error("User {user} is not authorized to operate Servitor server {server_name}")]
+	Unauthorized { user: UserId, server_name: String },
+
+	#[error(transparent)]
+	Servitor(#[from] ServitorError),
+}
+
+pub async fn start<S: ServitorController>(
+	data: &BotData,
+	servitor_handlers: &BTreeMap<String, S>,
+	server_name: &str,
+	author: &User,
+) -> Result<(), ExecuteServitorActionError> {
+	execute_action(data, servitor_handlers, server_name, author, async |h: &S, u: &str| {
+		info!("Running start for Servitor server {server_name}");
+		h.start(u).await
+	}).await
+}
+
+async fn execute_action<S, F>(
+	data: &BotData,
+	servitor_handlers: &BTreeMap<String, S>,
+	server_name: &str,
+	author: &User,
+	action: F,
+) -> Result<(), ExecuteServitorActionError>
+where
+	S: ServitorController,
+	F: AsyncFnOnce(&S, &str) -> Result<(), ServitorError>,
+{
+	let read = data.read().await;
+
+	let server_info = get_server_info(&read, server_name).await?;
+
+	if !is_user_authorized(author, server_info) {
+		return Err(ExecuteServitorActionError::Unauthorized {
+			user: author.id,
+			server_name: server_name.to_string(),
+		});
+	}
+
+	let servitor_handler =
+		servitor_handlers
+			.get(&server_info.servitor)
+			.ok_or(ExecuteServitorActionError::InvalidServitor {
+				server_name: server_name.to_string(),
+				servitor_name: server_info.servitor.to_string(),
+			})?;
+
+	action(servitor_handler, &server_info.unit_name.clone()).await?;
+
+	Ok(())
+}
+
+fn is_user_authorized(author: &User, server_info: &ServerInfo) -> bool {
+	server_info.authorized_users.contains(&author.id)
+		|| author.member.as_ref().map_or(false, |m| {
+		m.roles
+			.iter()
+			.any(|&role| server_info.authorized_roles.contains(&role))
+	})
+}
+
+// #[cfg(test)]
+// mod tests {
+// 	use super::*;
+// 	use crate::data::tests::mock_data;
+// 	use crate::services::servitor::tests::controllers_from_bot_data;
+// 	use serde_json::json;
+//
+// 	#[tokio::test]
+// 	async fn given_invalid_server_name_then_start_returns_invalid_server_error() {
+// 		let data = mock_data(Some(json!({
+// 			"servitor": {}
+// 		})));
+// 		let serv = controllers_from_bot_data(&data).await;
+//
+// 		let result = start(&data, &serv, "NonExistingServer").await;
+//
+// 		assert_eq!(
+// 			result,
+// 			Err(ExecuteServitorActionError::Server(ServerError::DoesNotExist {
+// 				server_name: "NonExistingServer".to_string(),
+// 			}))
+// 		);
+// 		for s in serv.values() {
+// 			s.assert_not_called().await;
+// 		}
+// 	}
+//
+// 	#[tokio::test]
+// 	async fn given_server_with_invalid_servitor_configured_then_returns_invalid_servitor_error() {
+// 		let data = mock_data(Some(json!({
+// 			"servitor": {
+// 				"SomeServer": {
+// 					"servitor": "foo",
+// 					"unit_name": "bar"
+// 				}
+// 			}
+// 		})));
+//
+// 		let mut serv = controllers_from_bot_data(&data).await;
+// 		serv.remove("foo");
+//
+// 		let result = start(&data, &serv, "SomeServer").await;
+//
+// 		assert_eq!(
+// 			result,
+// 			Err(ExecuteServitorActionError::InvalidServitor {
+// 				server_name: "SomeServer".to_string(),
+// 				servitor_name: "foo".to_string(),
+// 			})
+// 		);
+// 	}
+// }
