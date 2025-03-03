@@ -51,30 +51,13 @@ fn is_user_authorized(author: &User, machine_info: &WakeOnLanMachineInfo) -> boo
 
 #[cfg(test)]
 mod tests {
+	use super::super::super::tests::{mock_author_dms, mock_author_guild};
 	use super::*;
 	use crate::data::tests::mock_data;
 	use crate::services::wake_on_lan::MacAddress;
 	use serde_json::json;
-	use serenity::all::{Member, RoleId};
+	use serenity::all::RoleId;
 	use std::cell::Cell;
-
-	fn mock_author_dms(id: UserId) -> User {
-		let mut user = User::default();
-		user.id = id;
-		user.name = "mock_author".to_string();
-		user
-	}
-
-	fn mock_author_guild(id: UserId, roles: Vec<RoleId>) -> User {
-		let mut user = mock_author_dms(id);
-
-		let mut member = Member::default();
-		member.roles = roles;
-
-		user.member = Some(Box::new(member.into()));
-
-		user
-	}
 
 	#[derive(Default)]
 	struct MockMagicPacketSender {
