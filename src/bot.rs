@@ -1,12 +1,12 @@
 use crate::commands;
 use crate::config::Config;
 use crate::data::{BotData, PersistentJson};
-use crate::services::servitor::{HttpServitorController};
+use crate::services::servitor::HttpServitorController;
 use anyhow::Result;
 use log::{debug, error};
 use poise::{serenity_prelude as serenity, Framework, FrameworkOptions};
 use secrecy::ExposeSecret;
-use serenity::{Client};
+use serenity::Client;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -23,24 +23,36 @@ pub async fn client(config: &Config) -> Result<Client> {
 	let intents = serenity::GatewayIntents::non_privileged();
 
 	let client = serenity::ClientBuilder::new(config.bot.token.expose_secret(), intents)
-		.framework(build_framework().await)
+		.framework(build_framework(&config).await?)
 		.await?;
 	Ok(client)
 }
 
-async fn build_framework() -> Framework<BotState, BotError> {
-	Framework::builder()
+async fn build_framework(config: &Config) -> Result<Framework<BotState, BotError>> {
+	let servitor_controllers = config
+		.servitor
+		.iter()
+		.map(|(name, info)| {
+			HttpServitorController::new(&info.url, info.token.as_ref())
+				.map(|controller| (name.to_owned(), controller))
+		})
+		.collect::<Result<BTreeMap<_, _>, _>>()?;
+
+	let servitor = Arc::new(servitor_controllers);
+	let data = Arc::new(RwLock::new(PersistentJson::new("data.json")?));
+
+	Ok(Framework::builder()
 		.options(framework_options())
 		.setup(|ctx, _, framework| {
 			Box::pin(async move {
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 				Ok(BotState {
-					data: Arc::new(RwLock::new(PersistentJson::new("data.json")?)),
-					servitor: Arc::new(BTreeMap::new()),
+					data,
+					servitor,
 				})
 			})
 		})
-		.build()
+		.build())
 }
 
 fn framework_options() -> FrameworkOptions<BotState, BotError> {

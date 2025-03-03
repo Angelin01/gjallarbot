@@ -104,7 +104,7 @@ mod tests {
 	use super::*;
 	use crate::data::servitor::ServerInfo;
 	use crate::data::tests::mock_data;
-	use crate::services::servitor::tests::{controllers_from_bot_data, MockServitorController};
+	use crate::services::servitor::tests::controllers_from_bot_data;
 	use serde_json::json;
 	use std::collections::BTreeMap;
 
@@ -125,7 +125,9 @@ mod tests {
 			})
 		);
 		assert_eq!(data.read().await.servitor, BTreeMap::new());
-		serv.values().for_each(MockServitorController::assert_not_called);
+		for s in serv.values() {
+			s.assert_not_called().await;
+		}
 	}
 
 	#[tokio::test]
@@ -160,7 +162,9 @@ mod tests {
 		);
 		assert_eq!(data.read().await.servitor, expected_data);
 
-		serv.values().for_each(MockServitorController::assert_not_called);
+		for s in serv.values() {
+			s.assert_not_called().await;
+		}
 	}
 
 	#[tokio::test]
@@ -201,7 +205,9 @@ mod tests {
 		assert_eq!(result, Ok(()));
 		assert_eq!(data.read().await.servitor, expected_data);
 
-		serv.values().for_each(MockServitorController::assert_not_called);
+		for s in serv.values() {
+			s.assert_not_called().await;
+		}
 	}
 
 	#[tokio::test]
@@ -227,9 +233,12 @@ mod tests {
 			},
 		)]);
 
-		assert_eq!(result, Err(RemoveServerError::Server(ServerError::DoesNotExist {
-			server_name: "NonExistingServer".to_string()
-		})));
+		assert_eq!(
+			result,
+			Err(RemoveServerError::Server(ServerError::DoesNotExist {
+				server_name: "NonExistingServer".to_string()
+			}))
+		);
 		assert_eq!(data.read().await.servitor, expected_data);
 	}
 
@@ -297,7 +306,8 @@ mod tests {
 					server_name: "NonExistingServer".to_string()
 				})
 			)
-		}).await;
+		})
+		.await;
 	}
 
 	#[tokio::test]
@@ -314,14 +324,18 @@ mod tests {
 		describe_server(&data, "SomeServer", async |result, name| {
 			assert_eq!(name, "SomeServer");
 			match result {
-				Ok(server) => assert_eq!(server, &ServerInfo {
-					servitor: "foo".to_string(),
-					unit_name: "bar".to_string(),
-					authorized_users: Default::default(),
-					authorized_roles: Default::default(),
-				}),
+				Ok(server) => assert_eq!(
+					server,
+					&ServerInfo {
+						servitor: "foo".to_string(),
+						unit_name: "bar".to_string(),
+						authorized_users: Default::default(),
+						authorized_roles: Default::default(),
+					}
+				),
 				Err(_) => assert!(false, "received error when it was not expected"),
 			}
-		}).await;
+		})
+		.await;
 	}
 }
