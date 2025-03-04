@@ -28,3 +28,4 @@ lto = "fat"
 
 [dev-dependencies]
 tempfile = "3.17.1"
+rstest = "0.25.0"
