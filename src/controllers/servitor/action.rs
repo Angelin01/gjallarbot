@@ -38,6 +38,42 @@ pub async fn start<S: ServitorController>(
 	}).await
 }
 
+pub async fn stop<S: ServitorController>(
+	data: &BotData,
+	servitor_handlers: &BTreeMap<String, S>,
+	server_name: &str,
+	author: &User,
+) -> Result<(), ExecuteServitorActionError> {
+	execute_action(data, servitor_handlers, server_name, author, async |h: &S, u: &str| {
+		info!("Running stop for Servitor server {server_name}");
+		h.stop(u).await
+	}).await
+}
+
+pub async fn restart<S: ServitorController>(
+	data: &BotData,
+	servitor_handlers: &BTreeMap<String, S>,
+	server_name: &str,
+	author: &User,
+) -> Result<(), ExecuteServitorActionError> {
+	execute_action(data, servitor_handlers, server_name, author, async |h: &S, u: &str| {
+		info!("Running restart for Servitor server {server_name}");
+		h.restart(u).await
+	}).await
+}
+
+pub async fn reload<S: ServitorController>(
+	data: &BotData,
+	servitor_handlers: &BTreeMap<String, S>,
+	server_name: &str,
+	author: &User,
+) -> Result<(), ExecuteServitorActionError> {
+	execute_action(data, servitor_handlers, server_name, author, async |h: &S, u: &str| {
+		info!("Running reload for Servitor server {server_name}");
+		h.reload(u).await
+	}).await
+}
+
 async fn execute_action<S, F>(
 	data: &BotData,
 	servitor_handlers: &BTreeMap<String, S>,
