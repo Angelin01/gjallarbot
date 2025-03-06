@@ -38,7 +38,7 @@ pub fn status_embed(
 	match result {
 		Ok(status) => embeds::success(
 			"Servitor server status",
-			"Status for Servitor server SomeServer",
+			format!("Status for Servitor server {server_name}"),
 		)
 		.field("State", status.state, true)
 		.field("SubState", status.sub_state, true)
