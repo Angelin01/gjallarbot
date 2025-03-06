@@ -14,6 +14,7 @@ pub trait ServitorHandler {
 	async fn restart(&self, unit_name: &str) -> Result<(), ServitorError>;
 	async fn reload(&self, unit_name: &str) -> Result<(), ServitorError>;
 	async fn status(&self, unit_name: &str) -> Result<UnitStatus, ServitorError>;
+	#[allow(dead_code)]
 	async fn health(&self) -> bool;
 }
 

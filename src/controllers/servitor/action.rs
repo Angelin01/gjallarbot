@@ -165,7 +165,6 @@ fn is_user_authorized(author: &User, server_info: &ServerInfo) -> bool {
 #[cfg(test)]
 mod tests {
 	use std::fmt::Debug;
-	use chrono::{TimeZone, Utc};
 	use rstest::rstest;
 	use super::*;
 	use crate::controllers::tests::{mock_author_dms, mock_author_guild};
