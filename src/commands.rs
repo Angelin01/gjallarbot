@@ -16,6 +16,8 @@ pub fn commands() -> Vec<Command<BotState, BotError>> {
 	commands
 }
 
+const DISCORD_MAX_AUTOCOMPLETE_CHOICES: usize = 25;
+
 async fn reply_no_mentions<'a>(ctx: Context<'a>, embed: CreateEmbed) -> Result<ReplyHandle<'a>, BotError> {
 	Ok(ctx.send(
 		CreateReply::default()

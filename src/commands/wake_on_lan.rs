@@ -1,12 +1,13 @@
-mod machine;
 mod authorization;
+mod machine;
 mod wake;
 
+use super::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
 use crate::bot::{BotError, Context};
-/// Commands related to the wake-on-lan functionality
+
 #[poise::command(
 	slash_command,
-	rename="wake-on-lan",
+	rename = "wake-on-lan",
 	subcommands(
 		"wake::wake",
 		"machine::add_machine",
@@ -18,18 +19,13 @@ use crate::bot::{BotError, Context};
 		"authorization::add_role",
 		"authorization::remove_role",
 	),
-	subcommand_required,
+	subcommand_required
 )]
 pub async fn wake_on_lan(_: Context<'_>) -> Result<(), BotError> {
 	unreachable!("Can't call parent commands");
 }
 
-async fn autocomplete_machine_name(
-	ctx: Context<'_>,
-	partial: &str,
-) -> Vec<String> {
-	const DISCORD_MAX_CHOICES: usize = 25;
-
+async fn autocomplete_machine_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
 	ctx.data()
 		.data
 		.read()
@@ -37,7 +33,7 @@ async fn autocomplete_machine_name(
 		.wake_on_lan
 		.keys()
 		.filter(|name| name.starts_with(partial))
-		.take(DISCORD_MAX_CHOICES)
+		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
 		.cloned()
 		.collect()
 }

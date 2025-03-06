@@ -1,8 +1,9 @@
 mod action;
-mod server;
 mod authorization;
+mod server;
 
 use crate::bot::{BotError, Context};
+use crate::commands::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
 
 #[poise::command(
 	slash_command,
@@ -21,22 +22,31 @@ use crate::bot::{BotError, Context};
 		"authorization::add_role",
 		"authorization::remove_role",
 	),
-	subcommand_required,
+	subcommand_required
 )]
 pub async fn servitor(_: Context<'_>) -> Result<(), BotError> {
 	unreachable!("Can't call parent commands");
 }
 
-async fn autocomplete_server_name(
-	ctx: Context<'_>,
-	partial: &str,
-) -> Vec<String> {
-	todo!()
+async fn autocomplete_server_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
+	ctx.data()
+		.data
+		.read()
+		.await
+		.servitor
+		.keys()
+		.filter(|name| name.starts_with(partial))
+		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
+		.cloned()
+		.collect()
 }
 
-async fn autocomplete_servitor_name(
-	ctx: Context<'_>,
-	partial: &str,
-) -> Vec<String> {
-	todo!()
+async fn autocomplete_servitor_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
+	ctx.data()
+		.servitor
+		.keys()
+		.filter(|name| name.starts_with(partial))
+		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
+		.cloned()
+		.collect()
 }
