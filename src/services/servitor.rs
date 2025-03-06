@@ -17,7 +17,7 @@ pub trait ServitorHandler {
 	async fn health(&self) -> bool;
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct UnitStatus {
 	pub service: String,
 	pub state: String,
@@ -249,6 +249,15 @@ pub mod tests {
 				Ok(())
 			}
 		}
+
+		pub fn default_status(unit_name: &str) -> UnitStatus {
+			UnitStatus {
+				service: unit_name.to_string(),
+				state: "active".to_string(),
+				sub_state: "running".to_string(),
+				since: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+			}
+		}
 	}
 
 	impl ServitorHandler for MockServitorController {
@@ -276,12 +285,7 @@ pub mod tests {
 			self.called_status.fetch_add(1, Ordering::Relaxed);
 			self.check_for_error().await?;
 
-			Ok(UnitStatus {
-				service: unit_name.to_string(),
-				state: "active".to_string(),
-				sub_state: "running".to_string(),
-				since: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
-			})
+			Ok(Self::default_status(unit_name))
 		}
 
 		async fn health(&self) -> bool {
