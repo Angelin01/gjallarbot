@@ -11,7 +11,7 @@ edition = "2021"
 anyhow = "1.0.*"
 figment = { version = "0.10.19", default-features = false, features = ["env", "toml"] }
 log = "0.4.*"
-reqwest = { version = "0.12.12", features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls", "json"] }
 poise = { version = "0.6.*", default-features = false, features = ["chrono"] }
 serenity = { version = "0.12.*", default-features = false, features = ["chrono", "rustls_backend", "simd-json", "parking_lot"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
