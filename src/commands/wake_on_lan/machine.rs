@@ -1,9 +1,9 @@
 use super::autocomplete_machine_name;
 use crate::commands::reply_no_mentions;
-use crate::data::{BotError, Context};
 use crate::{controllers, views};
 use controllers::wake_on_lan::machine as ctrl_wol_mch;
 use views::wake_on_lan::machine as view_wol_mch;
+use crate::bot::{BotError, Context};
 
 #[poise::command(slash_command, owners_only, rename = "add-machine")]
 pub async fn add_machine(
@@ -11,7 +11,7 @@ pub async fn add_machine(
 	#[description = "Machine name"] name: String,
 	#[description = "Machine MAC Address as hex digits separated by :"] mac: String,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_mch::add_machine(&&ctx.data().data, &name, &mac).await;
+	let result = ctrl_wol_mch::add_machine(&ctx.data().data, &name, &mac).await;
 	let embed = view_wol_mch::add_machine_embed(result, &name, &mac);
 
 	reply_no_mentions(ctx, embed).await?;

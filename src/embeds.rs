@@ -33,6 +33,14 @@ pub fn invalid_machine<S: AsRef<str>>(machine_name: S) -> CreateEmbed {
 	error("Invalid Machine", format!("No machine with name {name} exists"))
 }
 
+pub fn invalid_servitor_server<S: AsRef<str>>(server_name: S) -> CreateEmbed {
+	let name = server_name.as_ref();
+	error(
+		"Invalid Servitor server",
+		format!("No Servitor server with name {name} exists"),
+	)
+}
+
 fn create_embed(title: impl Into<String>, description: impl Into<String>, color: impl Into<Colour>) -> CreateEmbed {
 	CreateEmbed::default()
 		.title(title)

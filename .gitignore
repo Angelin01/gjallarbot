@@ -14,3 +14,6 @@ target/
 
 # Running the bot locally will generate this file
 data.json
+
+# local configs
+gjallarbot.toml

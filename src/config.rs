@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use figment::providers::{Env, Format, Toml};
 use figment::Figment;
 use secrecy::SecretString;
@@ -22,6 +23,8 @@ pub struct Config {
 	pub bot: BotConfig,
 	#[serde(default)]
 	pub log: LogConfig,
+	#[serde(default)]
+	pub servitor: BTreeMap<String, ServitorConfig>,
 }
 
 #[derive(Deserialize)]
@@ -40,4 +43,11 @@ impl Default for LogConfig {
 			filter: "gjallarbot=info".into(),
 		}
 	}
+}
+
+#[derive(Deserialize)]
+pub struct ServitorConfig {
+	pub url: String,
+	#[serde(default)]
+	pub token: Option<SecretString>,
 }

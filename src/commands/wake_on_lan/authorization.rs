@@ -1,10 +1,10 @@
 use super::super::reply_no_mentions;
 use super::autocomplete_machine_name;
-use crate::data::{BotError, Context};
 use crate::{controllers, views};
 use controllers::wake_on_lan::authorization as ctrl_wol_auth;
 use poise::serenity_prelude::{Role, User};
 use views::wake_on_lan::authorization as view_wol_auth;
+use crate::bot::{BotError, Context};
 
 #[poise::command(slash_command, owners_only, rename = "add-user")]
 pub async fn add_user(

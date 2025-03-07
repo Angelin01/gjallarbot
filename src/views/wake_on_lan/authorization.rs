@@ -97,9 +97,9 @@ pub fn revoke_role_embed(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::controllers::wake_on_lan::authorization::Entity;
 	use crate::controllers::wake_on_lan::MachineError;
 	use serenity::all::Colour;
+	use crate::controllers::DiscordEntity;
 
 	#[test]
 	fn given_permit_user_error_with_nonexistent_machine_then_reply_with_error_no_machine() {
@@ -120,7 +120,7 @@ mod tests {
 	fn given_permit_user_error_with_already_authorized_then_reply_with_error_already_authorized() {
 		let result = Err(AddPermissionError::AlreadyAuthorized {
 			machine_name: "SomeMachine".to_string(),
-			entity: Entity::User(UserId::new(12345678901234567)),
+			entity: DiscordEntity::User(UserId::new(12345678901234567)),
 		});
 		let embed = permit_user_embed(result, "SomeMachine", UserId::new(12345678901234567));
 
@@ -167,7 +167,7 @@ mod tests {
 	fn given_revoke_user_error_with_already_unauthorized_then_reply_with_already_unauthorized() {
 		let result = Err(RemovePermissionError::AlreadyNotAuthorized {
 			machine_name: "SomeMachine".to_string(),
-			entity: Entity::User(UserId::new(76543210987654321)),
+			entity: DiscordEntity::User(UserId::new(76543210987654321)),
 		});
 		let embed = revoke_user_embed(result, "SomeMachine", UserId::new(76543210987654321));
 
@@ -214,7 +214,7 @@ mod tests {
 	fn given_permit_role_error_with_already_authorized_then_reply_with_error_already_authorized() {
 		let result = Err(AddPermissionError::AlreadyAuthorized {
 			machine_name: "SomeMachine".to_string(),
-			entity: Entity::Role(RoleId::new(12345678901234567)),
+			entity: DiscordEntity::Role(RoleId::new(12345678901234567)),
 		});
 		let embed = permit_role_embed(result, "SomeMachine", RoleId::new(12345678901234567));
 
@@ -261,7 +261,7 @@ mod tests {
 	fn given_revoke_role_error_with_already_unauthorized_then_reply_with_already_unauthorized() {
 		let result = Err(RemovePermissionError::AlreadyNotAuthorized {
 			machine_name: "SomeMachine".to_string(),
-			entity: Entity::Role(RoleId::new(76543210987654321)),
+			entity: DiscordEntity::Role(RoleId::new(76543210987654321)),
 		});
 		let embed = revoke_role_embed(result, "SomeMachine", RoleId::new(76543210987654321));
 
