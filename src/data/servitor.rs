@@ -1,6 +1,7 @@
+use crate::data::authorization::AuthorizationInfo;
 use poise::serenity_prelude as serenity;
-use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub type ServitorData = BTreeMap<String, ServerInfo>;
 
@@ -15,4 +16,13 @@ pub struct ServerInfo {
 	#[serde(skip_serializing_if = "BTreeSet::is_empty")]
 	#[serde(default)]
 	pub authorized_roles: BTreeSet<serenity::RoleId>,
+}
+
+impl AuthorizationInfo for ServerInfo {
+	fn authorized_users(&self) -> &BTreeSet<serenity::UserId> {
+		&self.authorized_users
+	}
+	fn authorized_roles(&self) -> &BTreeSet<serenity::RoleId> {
+		&self.authorized_roles
+	}
 }

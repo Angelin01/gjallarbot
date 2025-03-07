@@ -13,7 +13,7 @@ pub async fn start(
 	name: String,
 ) -> Result<(), BotError> {
 	let result =
-		ctrl_serv_act::start(&ctx.data().data, &ctx.data().servitor, &name, ctx.author()).await;
+		ctrl_serv_act::start(&ctx.data().data, &ctx.data().servitor, &name, ctx.author(), ctx.author_member().await.as_deref()).await;
 
 	let embed = view_serv_act::start_embed(result, &name);
 
@@ -30,7 +30,7 @@ pub async fn stop(
 	name: String,
 ) -> Result<(), BotError> {
 	let result =
-		ctrl_serv_act::stop(&ctx.data().data, &ctx.data().servitor, &name, ctx.author()).await;
+		ctrl_serv_act::stop(&ctx.data().data, &ctx.data().servitor, &name, ctx.author(), ctx.author_member().await.as_deref()).await;
 
 	let embed = view_serv_act::stop_embed(result, &name);
 
@@ -47,7 +47,7 @@ pub async fn restart(
 	name: String,
 ) -> Result<(), BotError> {
 	let result =
-		ctrl_serv_act::restart(&ctx.data().data, &ctx.data().servitor, &name, ctx.author()).await;
+		ctrl_serv_act::restart(&ctx.data().data, &ctx.data().servitor, &name, ctx.author(), ctx.author_member().await.as_deref()).await;
 
 	let embed = view_serv_act::restart_embed(result, &name);
 
@@ -64,7 +64,7 @@ pub async fn reload(
 	name: String,
 ) -> Result<(), BotError> {
 	let result =
-		ctrl_serv_act::reload(&ctx.data().data, &ctx.data().servitor, &name, ctx.author()).await;
+		ctrl_serv_act::reload(&ctx.data().data, &ctx.data().servitor, &name, ctx.author(), ctx.author_member().await.as_deref()).await;
 
 	let embed = view_serv_act::reload_embed(result, &name);
 
@@ -81,7 +81,7 @@ pub async fn status(
 	name: String,
 ) -> Result<(), BotError> {
 	let result =
-		ctrl_serv_act::status(&ctx.data().data, &ctx.data().servitor, &name, ctx.author()).await;
+		ctrl_serv_act::status(&ctx.data().data, &ctx.data().servitor, &name, ctx.author(), ctx.author_member().await.as_deref()).await;
 
 	let embed = view_serv_act::status_embed(result, &name);
 

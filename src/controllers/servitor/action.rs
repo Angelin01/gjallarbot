@@ -1,9 +1,9 @@
+use super::super::is_user_authorized;
 use crate::controllers::servitor::{get_server_info, ServerError};
-use crate::data::servitor::ServerInfo;
 use crate::data::BotData;
 use crate::services::servitor::{ServitorController, ServitorError, UnitStatus};
 use log::info;
-use serenity::all::{User, UserId};
+use serenity::all::{Member, User, UserId};
 use std::collections::BTreeMap;
 use std::ops::AsyncFnOnce;
 use thiserror::Error;
@@ -31,12 +31,14 @@ pub async fn start<S: ServitorController>(
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
+	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
 		data,
 		servitor_handlers,
 		server_name,
 		author,
+		member,
 		async |h: &S, u: &str| {
 			info!("Running start for Servitor server {server_name}");
 			h.start(u).await
@@ -50,12 +52,14 @@ pub async fn stop<S: ServitorController>(
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
+	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
 		data,
 		servitor_handlers,
 		server_name,
 		author,
+		member,
 		async |h: &S, u: &str| {
 			info!("Running stop for Servitor server {server_name}");
 			h.stop(u).await
@@ -69,12 +73,14 @@ pub async fn restart<S: ServitorController>(
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
+	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
 		data,
 		servitor_handlers,
 		server_name,
 		author,
+		member,
 		async |h: &S, u: &str| {
 			info!("Running restart for Servitor server {server_name}");
 			h.restart(u).await
@@ -88,12 +94,14 @@ pub async fn reload<S: ServitorController>(
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
+	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
 		data,
 		servitor_handlers,
 		server_name,
 		author,
+		member,
 		async |h: &S, u: &str| {
 			info!("Running reload for Servitor server {server_name}");
 			h.reload(u).await
@@ -107,12 +115,14 @@ pub async fn status<S: ServitorController>(
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
+	member: Option<&Member>,
 ) -> Result<UnitStatus, ExecuteServitorActionError> {
 	execute_action(
 		data,
 		servitor_handlers,
 		server_name,
 		author,
+		member,
 		async |h: &S, u: &str| {
 			info!("Running status for Servitor server {server_name}");
 			h.status(u).await
@@ -126,6 +136,7 @@ async fn execute_action<S, F, T>(
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
+	member: Option<&Member>,
 	action: F,
 ) -> Result<T, ExecuteServitorActionError>
 where
@@ -136,7 +147,7 @@ where
 
 	let server_info = get_server_info(&read, server_name).await?;
 
-	if !is_user_authorized(author, server_info) {
+	if !is_user_authorized(author, member, server_info) {
 		return Err(ExecuteServitorActionError::Unauthorized {
 			user: author.id,
 			server_name: server_name.to_string(),
@@ -153,25 +164,16 @@ where
 	Ok(action(servitor_handler, &server_info.unit_name.clone()).await?)
 }
 
-fn is_user_authorized(author: &User, server_info: &ServerInfo) -> bool {
-	server_info.authorized_users.contains(&author.id)
-		|| author.member.as_ref().map_or(false, |m| {
-			m.roles
-				.iter()
-				.any(|&role| server_info.authorized_roles.contains(&role))
-		})
-}
-
 #[cfg(test)]
 mod tests {
-	use std::fmt::Debug;
-	use rstest::rstest;
 	use super::*;
 	use crate::controllers::tests::{mock_author_dms, mock_author_guild};
 	use crate::data::tests::mock_data;
 	use crate::services::servitor::tests::{controllers_from_bot_data, MockServitorController};
+	use rstest::rstest;
 	use serde_json::json;
 	use serenity::all::RoleId;
+	use std::fmt::Debug;
 
 	#[rstest]
 	#[case(start)]
@@ -180,16 +182,24 @@ mod tests {
 	#[case(reload)]
 	#[case(status)]
 	#[tokio::test]
-	async fn given_invalid_server_name_then_action_returns_invalid_server_error<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>
+	async fn given_invalid_server_name_then_action_returns_invalid_server_error<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 	) {
 		let data = mock_data(Some(json!({
 			"servitor": {}
 		})));
 		let serv = controllers_from_bot_data(&data).await;
-		let author = mock_author_dms(UserId::new(12345678901234567));
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
-		let result = action(&data, &serv, "NonExistingServer", &author).await;
+		let result = action(&data, &serv, "NonExistingServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -209,8 +219,16 @@ mod tests {
 	#[case(reload)]
 	#[case(status)]
 	#[tokio::test]
-	async fn given_server_with_invalid_servitor_configured_then_action_returns_invalid_servitor_error<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>
+	async fn given_server_with_invalid_servitor_configured_then_action_returns_invalid_servitor_error<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 	) {
 		let data = mock_data(Some(json!({
 			"servitor": {
@@ -224,9 +242,9 @@ mod tests {
 
 		let mut serv = controllers_from_bot_data(&data).await;
 		serv.remove("foo");
-		let author = mock_author_dms(UserId::new(12345678901234567u64));
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567u64));
 
-		let result = action(&data, &serv, "SomeServer", &author).await;
+		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -245,8 +263,16 @@ mod tests {
 	#[case(reload)]
 	#[case(status)]
 	#[tokio::test]
-	async fn given_dm_call_but_user_not_in_allowed_list_then_action_returns_unauthorized_error<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>
+	async fn given_dm_call_but_user_not_in_allowed_list_then_action_returns_unauthorized_error<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 	) {
 		let data = mock_data(Some(json!({
 			"servitor": {
@@ -259,9 +285,9 @@ mod tests {
 			}
 		})));
 		let serv = controllers_from_bot_data(&data).await;
-		let author = mock_author_dms(UserId::new(12345678901234567));
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
-		let result = action(&data, &serv, "SomeServer", &author).await;
+		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -280,8 +306,16 @@ mod tests {
 	#[case(reload)]
 	#[case(status)]
 	#[tokio::test]
-	async fn given_guild_call_but_user_not_in_allowed_list_then_action_returns_unauthorized_error<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>
+	async fn given_guild_call_but_user_not_in_allowed_list_then_action_returns_unauthorized_error<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 	) {
 		let data = mock_data(Some(json!({
 			"servitor": {
@@ -294,9 +328,9 @@ mod tests {
 			}
 		})));
 		let serv = controllers_from_bot_data(&data).await;
-		let author = mock_author_guild(UserId::new(12345678901234567), vec![]);
+		let (author, member) = mock_author_guild(UserId::new(12345678901234567), vec![]);
 
-		let result = action(&data, &serv, "SomeServer", &author).await;
+		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -315,8 +349,16 @@ mod tests {
 	#[case(reload, (0, 0, 0, 1, 0))]
 	#[case(status, (0, 0, 0, 0, 1))]
 	#[tokio::test]
-	async fn given_unexpected_servitor_error_then_action_should_return_servitor_error<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>,
+	async fn given_unexpected_servitor_error_then_action_should_return_servitor_error<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 		#[case] calls: (usize, usize, usize, usize, usize),
 	) {
 		let data = mock_data(Some(json!({
@@ -331,13 +373,15 @@ mod tests {
 		})));
 		let serv = controllers_from_bot_data(&data).await;
 		serv["foo"].set_error(ServitorError::Unauthorized).await;
-		let author = mock_author_dms(UserId::new(12345678901234567u64));
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567u64));
 
-		let result = action(&data, &serv, "SomeServer", &author).await;
+		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
-			Err(ExecuteServitorActionError::Servitor(ServitorError::Unauthorized))
+			Err(ExecuteServitorActionError::Servitor(
+				ServitorError::Unauthorized
+			))
 		);
 		serv["foo"].assert_called_times(calls.0, calls.1, calls.2, calls.3, calls.4);
 	}
@@ -349,8 +393,16 @@ mod tests {
 	#[case(reload, (0, 0, 0, 1, 0), ())]
 	#[case(status, (0, 0, 0, 0, 1), MockServitorController::default_status("bar"))]
 	#[tokio::test]
-	async fn given_dm_call_and_user_in_allowed_list_then_should_action_server<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>,
+	async fn given_dm_call_and_user_in_allowed_list_then_should_action_server<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 		#[case] calls: (usize, usize, usize, usize, usize),
 		#[case] expected_result: T,
 	) {
@@ -365,14 +417,11 @@ mod tests {
 			}
 		})));
 		let serv = controllers_from_bot_data(&data).await;
-		let author = mock_author_dms(UserId::new(12345678901234567u64));
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567u64));
 
-		let result = action(&data, &serv, "SomeServer", &author).await;
+		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
 
-		assert_eq!(
-			result,
-			Ok(expected_result)
-		);
+		assert_eq!(result, Ok(expected_result));
 		serv["foo"].assert_called_times(calls.0, calls.1, calls.2, calls.3, calls.4);
 	}
 
@@ -383,8 +432,16 @@ mod tests {
 	#[case(reload, (0, 0, 0, 1, 0), ())]
 	#[case(status, (0, 0, 0, 0, 1), MockServitorController::default_status("bar"))]
 	#[tokio::test]
-	async fn given_guild_call_and_user_in_allowed_list_then_should_action_server<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>,
+	async fn given_guild_call_and_user_in_allowed_list_then_should_action_server<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 		#[case] calls: (usize, usize, usize, usize, usize),
 		#[case] expected_result: T,
 	) {
@@ -399,14 +456,11 @@ mod tests {
 			}
 		})));
 		let serv = controllers_from_bot_data(&data).await;
-		let author = mock_author_guild(UserId::new(12345678901234567u64), vec![]);
+		let (author, member) = mock_author_guild(UserId::new(12345678901234567u64), vec![]);
 
-		let result = action(&data, &serv, "SomeServer", &author).await;
+		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
 
-		assert_eq!(
-			result,
-			Ok(expected_result)
-		);
+		assert_eq!(result, Ok(expected_result));
 		serv["foo"].assert_called_times(calls.0, calls.1, calls.2, calls.3, calls.4);
 	}
 
@@ -417,8 +471,16 @@ mod tests {
 	#[case(reload, (0, 0, 0, 1, 0), ())]
 	#[case(status, (0, 0, 0, 0, 1), MockServitorController::default_status("bar"))]
 	#[tokio::test]
-	async fn given_guild_call_and_users_role_in_allowed_list_then_should_action_server<T: Debug + PartialEq>(
-		#[case] action: impl AsyncFnOnce(&BotData, &BTreeMap<String, MockServitorController>, &str, &User) -> Result<T, ExecuteServitorActionError>,
+	async fn given_guild_call_and_users_role_in_allowed_list_then_should_action_server<
+		T: Debug + PartialEq,
+	>(
+		#[case] action: impl AsyncFnOnce(
+			&BotData,
+			&BTreeMap<String, MockServitorController>,
+			&str,
+			&User,
+			Option<&Member>,
+		) -> Result<T, ExecuteServitorActionError>,
 		#[case] calls: (usize, usize, usize, usize, usize),
 		#[case] expected_result: T,
 	) {
@@ -433,14 +495,14 @@ mod tests {
 			}
 		})));
 		let serv = controllers_from_bot_data(&data).await;
-		let author = mock_author_guild(UserId::new(12345678901234567u64), vec![RoleId::new(98765432109876543u64)]);
-
-		let result = action(&data, &serv, "SomeServer", &author).await;
-
-		assert_eq!(
-			result,
-			Ok(expected_result)
+		let (author, member) = mock_author_guild(
+			UserId::new(12345678901234567u64),
+			vec![RoleId::new(98765432109876543u64)],
 		);
+
+		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+
+		assert_eq!(result, Ok(expected_result));
 		serv["foo"].assert_called_times(calls.0, calls.1, calls.2, calls.3, calls.4);
 	}
 }

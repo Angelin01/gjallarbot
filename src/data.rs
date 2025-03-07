@@ -8,6 +8,7 @@ use wake_on_lan::WakeOnLanData;
 
 pub mod servitor;
 pub mod wake_on_lan;
+pub mod authorization;
 
 pub use persistent_data::*;
 

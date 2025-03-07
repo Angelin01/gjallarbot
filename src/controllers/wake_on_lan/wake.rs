@@ -1,8 +1,8 @@
+use super::super::is_user_authorized;
 use super::{get_machine_info, MachineError};
-use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 use crate::data::BotData;
 use crate::services::wake_on_lan::{MagicPacket, MagicPacketSender};
-use serenity::all::{User, UserId};
+use serenity::all::{Member, User, UserId};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -20,6 +20,7 @@ pub enum WakeError {
 pub async fn wake<S: MagicPacketSender>(
 	data: &BotData,
 	author: &User,
+	member: Option<&Member>,
 	machine_name: &str,
 	sender: &S,
 ) -> Result<(), WakeError> {
@@ -27,7 +28,7 @@ pub async fn wake<S: MagicPacketSender>(
 
 	let machine_info = get_machine_info(&data_read, machine_name).await?;
 
-	if !is_user_authorized(author, &machine_info) {
+	if !is_user_authorized(author, member, machine_info) {
 		return Err(WakeError::Unauthorized {
 			user: author.id.to_owned(),
 			machine_name: machine_name.to_string(),
@@ -38,15 +39,6 @@ pub async fn wake<S: MagicPacketSender>(
 		.send(&MagicPacket::from_mac(&machine_info.mac))
 		.await
 		.map_err(|e| WakeError::Io { kind: e.kind() })
-}
-
-fn is_user_authorized(author: &User, machine_info: &WakeOnLanMachineInfo) -> bool {
-	machine_info.authorized_users.contains(&author.id)
-		|| author.member.as_ref().map_or(false, |m| {
-			m.roles
-				.iter()
-				.any(|&role| machine_info.authorized_roles.contains(&role))
-		})
 }
 
 #[cfg(test)]
@@ -97,10 +89,12 @@ mod tests {
 		})));
 
 		let sender = MockMagicPacketSender::default();
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
 		let result = wake(
 			&data,
-			&mock_author_dms(UserId::new(12345678901234567)),
+			&author,
+			member.as_ref(),
 			"NonexistentMachine",
 			&sender,
 		)
@@ -128,10 +122,12 @@ mod tests {
 			}
 		})));
 		let sender = MockMagicPacketSender::default();
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
 		let result = wake(
 			&data,
-			&mock_author_dms(UserId::new(12345678901234567)),
+			&author,
+			member.as_ref(),
 			"ExistingMachine",
 			&sender,
 		)
@@ -160,13 +156,15 @@ mod tests {
 			}
 		})));
 		let sender = MockMagicPacketSender::default();
+		let (author, member) = mock_author_guild(
+			UserId::new(12345678901234567),
+			vec![RoleId::new(12345678901234567)],
+		);
 
 		let result = wake(
 			&data,
-			&mock_author_guild(
-				UserId::new(12345678901234567),
-				vec![RoleId::new(12345678901234567)],
-			),
+			&author,
+			member.as_ref(),
 			"ExistingMachine",
 			&sender,
 		)
@@ -194,10 +192,12 @@ mod tests {
 			}
 		})));
 		let sender = MockMagicPacketSender::default();
+		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
 		let result = wake(
 			&data,
-			&mock_author_dms(UserId::new(12345678901234567)),
+			&author,
+			member.as_ref(),
 			"ExistingMachine",
 			&sender,
 		)
@@ -223,13 +223,15 @@ mod tests {
 			}
 		})));
 		let sender = MockMagicPacketSender::default();
+		let (author, member) = mock_author_guild(
+			UserId::new(12345678901234567),
+			vec![RoleId::new(98765432109876543)],
+		);
 
 		let result = wake(
 			&data,
-			&mock_author_guild(
-				UserId::new(12345678901234567),
-				vec![RoleId::new(98765432109876543)],
-			),
+			&author,
+			member.as_ref(),
 			"ExistingMachine",
 			&sender,
 		)
@@ -255,13 +257,15 @@ mod tests {
 			}
 		})));
 		let sender = MockMagicPacketSender::default();
+		let (author, member) = mock_author_guild(
+			UserId::new(12345678901234567),
+			vec![RoleId::new(98765432109876543)],
+		);
 
 		let result = wake(
 			&data,
-			&mock_author_guild(
-				UserId::new(12345678901234567),
-				vec![RoleId::new(98765432109876543)],
-			),
+			&author,
+			member.as_ref(),
 			"ExistingMachine",
 			&sender,
 		)
