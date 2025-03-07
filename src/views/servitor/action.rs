@@ -56,7 +56,7 @@ fn action_embed(
 	match result {
 		Ok(_) => embeds::success(
 			format!("Servitor server {action_name}"),
-			format!("Ran action {action_name} for Servitor server SomeServer"),
+			format!("Ran action {action_name} for Servitor server {server_name}"),
 		),
 		Err(e) => servitor_error_embed(e, server_name),
 	}

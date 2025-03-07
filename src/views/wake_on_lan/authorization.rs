@@ -59,12 +59,12 @@ pub fn permit_role_embed(
 			"Successfully permitted role to wake the machine!",
 		)
 		.field("Machine", machine_name, true)
-		.field("Role", format!("<@{role_id}>"), true),
+		.field("Role", format!("<@&{role_id}>"), true),
 		Err(e) => match e {
 			AddPermissionError::Machine(_) => embeds::invalid_machine(machine_name),
 			AddPermissionError::AlreadyAuthorized { .. } => embeds::error(
 				"Role already permitted",
-				format!("Role <@{role_id}> is already permitted to wake machine {machine_name}"),
+				format!("Role <@&{role_id}> is already permitted to wake machine {machine_name}"),
 			),
 		},
 	}
@@ -81,13 +81,13 @@ pub fn revoke_role_embed(
 			"Successfully revoked role's permission to wake the machine!",
 		)
 		.field("Machine", machine_name, true)
-		.field("Role", format!("<@{role_id}>"), true),
+		.field("Role", format!("<@&{role_id}>"), true),
 		Err(e) => match e {
 			RemovePermissionError::Machine(_) => embeds::invalid_machine(machine_name),
 			RemovePermissionError::AlreadyNotAuthorized { .. } => embeds::error(
 				"Role not permitted",
 				format!(
-					"Role <@{role_id}> is already not permitted to wake machine {machine_name}"
+					"Role <@&{role_id}> is already not permitted to wake machine {machine_name}"
 				),
 			),
 		},
@@ -222,7 +222,7 @@ mod tests {
 			.title(":x: Role already permitted")
 			.colour(Colour(0xdd2e44))
 			.description(
-				"Role <@12345678901234567> is already permitted to wake machine SomeMachine",
+				"Role <@&12345678901234567> is already permitted to wake machine SomeMachine",
 			);
 
 		assert_eq!(embed, expected_embed);
@@ -237,7 +237,7 @@ mod tests {
 			.colour(Colour(0x77b255))
 			.description("Successfully permitted role to wake the machine!")
 			.field("Machine", "SomeMachine", true)
-			.field("Role", "<@12345678901234567>", true);
+			.field("Role", "<@&12345678901234567>", true);
 
 		assert_eq!(embed, expected_embed);
 	}
@@ -269,7 +269,7 @@ mod tests {
 			.title(":x: Role not permitted")
 			.colour(Colour(0xdd2e44))
 			.description(
-				"Role <@76543210987654321> is already not permitted to wake machine SomeMachine",
+				"Role <@&76543210987654321> is already not permitted to wake machine SomeMachine",
 			);
 
 		assert_eq!(embed, expected_embed);
@@ -284,7 +284,7 @@ mod tests {
 			.colour(Colour(0x77b255))
 			.description("Successfully revoked role's permission to wake the machine!")
 			.field("Machine", "SomeMachine", true)
-			.field("Role", "<@12345678901234567>", true);
+			.field("Role", "<@&12345678901234567>", true);
 
 		assert_eq!(embed, expected_embed);
 	}
