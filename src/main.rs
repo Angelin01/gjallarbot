@@ -1,6 +1,4 @@
 #![feature(trait_alias)]
-#![feature(let_chains)]
-#![feature(async_closure)]
 #![feature(async_fn_traits)]
 
 use crate::config::{Config, LogConfig};

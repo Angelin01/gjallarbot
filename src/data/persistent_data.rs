@@ -82,7 +82,7 @@ impl<T: PersistentData + Default> PersistentJson<T> {
 		})
 	}
 
-	pub fn write(&mut self) -> PersistentWriteGuard<T> {
+	pub fn write(&mut self) -> PersistentWriteGuard<'_, T> {
 		PersistentWriteGuard::new(&mut self.data, &self.path)
 	}
 }
