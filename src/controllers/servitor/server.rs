@@ -29,6 +29,7 @@ pub async fn add_server<S: ServitorController>(
 	name: &str,
 	servitor: &str,
 	unit_name: &str,
+	wake_on_lan: &Option<String>,
 ) -> Result<(), AddServerError> {
 	if !servitor_handlers.contains_key(servitor) {
 		return Err(InvalidServitor {
@@ -52,6 +53,7 @@ pub async fn add_server<S: ServitorController>(
 				unit_name: unit_name.to_string(),
 				authorized_users: Default::default(),
 				authorized_roles: Default::default(),
+				wake_on_lan: wake_on_lan.clone(),
 			},
 		);
 	}
@@ -116,7 +118,7 @@ mod tests {
 		})));
 		let serv = controllers_from_bot_data(&data).await;
 
-		let result = add_server(&data, &serv, "test", "NonExistingServitor", "some_name").await;
+		let result = add_server(&data, &serv, "test", "NonExistingServitor", "some_name", ).await;
 
 		assert_eq!(
 			result,
@@ -140,7 +142,7 @@ mod tests {
 		})));
 		let serv = controllers_from_bot_data(&data).await;
 
-		let result = add_server(&data, &serv, "SomeServer", "foo", "some_name").await;
+		let result = add_server(&data, &serv, "SomeServer", "foo", "some_name", ).await;
 
 		let expected_data = BTreeMap::from([(
 			"SomeServer".to_string(),
@@ -175,7 +177,7 @@ mod tests {
 		})));
 		let serv = controllers_from_bot_data(&data).await;
 
-		let result = add_server(&data, &serv, "NewServer", "foo", "some_name").await;
+		let result = add_server(&data, &serv, "NewServer", "foo", "some_name", ).await;
 
 		let expected_data = BTreeMap::from([
 			(

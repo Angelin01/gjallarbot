@@ -6,6 +6,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use thiserror::Error;
+use tokio::time::{sleep, Instant};
 
 pub trait ServitorController = ServitorHandler + Send + Sync;
 pub trait ServitorHandler {
@@ -14,8 +15,7 @@ pub trait ServitorHandler {
 	async fn restart(&self, unit_name: &str) -> Result<(), ServitorError>;
 	async fn reload(&self, unit_name: &str) -> Result<(), ServitorError>;
 	async fn status(&self, unit_name: &str) -> Result<UnitStatus, ServitorError>;
-	#[allow(dead_code)]
-	async fn health(&self) -> bool;
+	async fn wait_until_healthy(&self) -> Result<(), ServitorError>;
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -40,6 +40,8 @@ pub enum ServitorError {
 	Unauthorized,
 	#[error("The Servitor instance encountered an unexpected issue")]
 	InternalServerError,
+	#[error("Timed out waiting for servitor instance to become healthy")]
+	Unhealthy,
 	#[error("Unexpected error: {status_code:?}, error: {error:?}")]
 	Unexpected {
 		status_code: Option<StatusCode>,
@@ -121,6 +123,16 @@ impl HttpServitorController {
 		Self::check_response(response)?;
 		Ok(())
 	}
+
+	async fn send_health_request(&self) -> bool {
+		let url = format!("{}/health", self.base_url);
+
+		self.http
+			.get(&url)
+			.send()
+			.await
+			.map_or(false, |r| r.error_for_status().is_ok())
+	}
 }
 
 impl ServitorHandler for HttpServitorController {
@@ -147,14 +159,23 @@ impl ServitorHandler for HttpServitorController {
 		Ok(status)
 	}
 
-	async fn health(&self) -> bool {
-		let url = format!("{}/health", self.base_url);
+	async fn wait_until_healthy(&self) -> Result<(), ServitorError> {
+		let deadline = Instant::now() + Duration::from_secs(60);
 
-		self.http
-			.get(&url)
-			.send()
-			.await
-			.map_or(false, |r| r.error_for_status().is_ok())
+		loop {
+			if self.send_health_request().await {
+				return Ok(());
+			}
+
+			let remaining = deadline.saturating_duration_since(Instant::now());
+			if remaining.is_zero() {
+				break;
+			}
+
+			sleep(remaining.min(Duration::from_secs(5))).await;
+		}
+
+		Err(ServitorError::Unhealthy)
 	}
 }
 
@@ -163,7 +184,7 @@ pub mod tests {
 	use super::*;
 	use crate::data::BotData;
 	use std::collections::BTreeMap;
-	use std::sync::atomic::{AtomicUsize, Ordering};
+	use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 	use std::sync::Arc;
 	use chrono::TimeZone;
 	use tokio::sync::Mutex;
@@ -186,6 +207,7 @@ pub mod tests {
 		called_reload: Arc<AtomicUsize>,
 		called_status: Arc<AtomicUsize>,
 		error: Arc<Mutex<Option<ServitorError>>>,
+		healthy: Arc<AtomicBool>,
 	}
 
 	impl MockServitorController {
@@ -197,6 +219,7 @@ pub mod tests {
 				called_reload: Arc::new(AtomicUsize::new(0)),
 				called_status: Arc::new(AtomicUsize::new(0)),
 				error: Arc::new(Mutex::new(None)),
+				healthy: Arc::new(AtomicBool::new(true)),
 			}
 		}
 
@@ -241,6 +264,10 @@ pub mod tests {
 
 		pub async fn set_error(&self, error: ServitorError) {
 			*self.error.lock().await = Some(error);
+		}
+		
+		pub async fn set_healthy(&self, healthy: bool) {
+			*self.healthy.store(healthy, Ordering::Relaxed)
 		}
 
 		async fn check_for_error(&self) -> Result<(), ServitorError> {
@@ -289,8 +316,8 @@ pub mod tests {
 			Ok(Self::default_status(unit_name))
 		}
 
-		async fn health(&self) -> bool {
-			true
+		async fn wait_until_healthy(&self) -> Result<(), ServitorError> {
+			self.healthy.load(Ordering::Relaxed).ok_or(ServitorError::Unhealthy)
 		}
 	}
 }

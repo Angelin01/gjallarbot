@@ -1,5 +1,6 @@
 use super::super::reply_no_mentions;
 use super::{autocomplete_server_name, autocomplete_servitor_name};
+use crate::commands::wake_on_lan;
 use crate::bot::{BotError, Context};
 use crate::controllers::servitor::server as ctrl_serv_srv;
 use crate::views::servitor::server as view_serv_srv;
@@ -12,6 +13,9 @@ pub async fn add_server(
 	#[autocomplete = "autocomplete_servitor_name"]
 	servitor: String,
 	#[description = "Unit name"] unit_name: String,
+	#[description = "Optional name of a machine to wake before trying to execute actions on the server"]
+	#[autocomplete = "wake_on_lan::autocomplete_machine_name"]
+	wake_on_lan: Option<String>,
 ) -> Result<(), BotError> {
 	let result = ctrl_serv_srv::add_server(
 		&ctx.data().data,
@@ -19,6 +23,7 @@ pub async fn add_server(
 		&name,
 		&servitor,
 		&unit_name,
+		&wake_on_lan,
 	)
 	.await;
 

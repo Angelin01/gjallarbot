@@ -93,6 +93,7 @@ fn servitor_error_embed(error: ExecuteServitorActionError, server_name: &str) ->
 				"Received an unexpected error while trying to communicate with the Servitor instance, \
 					something is really wrong!"
 			),
+			ServitorError::Unhealthy  => todo!()
 		}
 	}
 }

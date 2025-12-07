@@ -16,6 +16,9 @@ pub struct ServerInfo {
 	#[serde(skip_serializing_if = "BTreeSet::is_empty")]
 	#[serde(default)]
 	pub authorized_roles: BTreeSet<serenity::RoleId>,
+	#[serde(skip_serializing_if = "Option::is_empty")]
+	#[serde(default)]
+	pub wake_on_lan: Option<String>,
 }
 
 impl AuthorizationInfo for ServerInfo {

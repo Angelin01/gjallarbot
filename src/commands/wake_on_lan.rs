@@ -25,7 +25,7 @@ pub async fn wake_on_lan(_: Context<'_>) -> Result<(), BotError> {
 	unreachable!("Can't call parent commands");
 }
 
-async fn autocomplete_machine_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
+pub async fn autocomplete_machine_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
 	ctx.data()
 		.data
 		.read()

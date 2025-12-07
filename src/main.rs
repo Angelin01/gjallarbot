@@ -1,5 +1,6 @@
 #![feature(trait_alias)]
 #![feature(async_fn_traits)]
+#![feature(bool_to_result)]
 
 use crate::config::{Config, LogConfig};
 use anyhow::Result;
