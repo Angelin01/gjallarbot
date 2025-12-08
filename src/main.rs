@@ -18,6 +18,7 @@ mod embeds;
 mod errors;
 mod services;
 mod views;
+mod schema;
 
 #[tokio::main]
 async fn main() -> Result<()> {
