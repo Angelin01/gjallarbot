@@ -1,25 +1,25 @@
-diff --git a/src/schema.rs b/src/schema.rs
-index 5b9cf3c..e848361 100644
---- a/src/schema.rs
-+++ b/src/schema.rs
+--- b/src/schema.rs
++++ a/src/schema.rs
 @@ -1,58 +1,58 @@
  // @generated automatically by Diesel CLI.
  
  diesel::table! {
  	servitor_server_authorized_roles (server_id, role_id) {
  		server_id -> Integer,
- 		role_id -> Integer,
--		created_at -> Timestamp,
++		role_id -> BigInt,
 +		created_at -> TimestamptzSqlite,
+-		role_id -> Integer,
+-		created_at -> Timestamp,
  	}
  }
  
  diesel::table! {
  	servitor_server_authorized_users (server_id, user_id) {
  		server_id -> Integer,
- 		user_id -> Integer,
--		created_at -> Timestamp,
++		user_id -> BigInt,
 +		created_at -> TimestamptzSqlite,
+-		user_id -> Integer,
+-		created_at -> Timestamp,
  	}
  }
  
@@ -29,10 +29,10 @@ index 5b9cf3c..e848361 100644
  		name -> Text,
  		servitor -> Text,
  		unit_name -> Text,
--		created_at -> Timestamp,
--		updated_at -> Timestamp,
 +		created_at -> TimestamptzSqlite,
 +		updated_at -> TimestamptzSqlite,
+-		created_at -> Timestamp,
+-		updated_at -> Timestamp,
  	}
  }
  
@@ -41,28 +41,30 @@ index 5b9cf3c..e848361 100644
  		id -> Integer,
  		name -> Text,
  		mac -> Text,
--		created_at -> Timestamp,
--		updated_at -> Timestamp,
 +		created_at -> TimestamptzSqlite,
 +		updated_at -> TimestamptzSqlite,
+-		created_at -> Timestamp,
+-		updated_at -> Nullable<Timestamp>,
  	}
  }
  
  diesel::table! {
  	wake_on_lan_machines_authorized_roles (machine_id, role_id) {
  		machine_id -> Integer,
- 		role_id -> Integer,
--		created_at -> Timestamp,
++		role_id -> BigInt,
 +		created_at -> TimestamptzSqlite,
+-		role_id -> Integer,
+-		created_at -> Timestamp,
  	}
  }
  
  diesel::table! {
  	wake_on_lan_machines_authorized_users (machine_id, user_id) {
  		machine_id -> Integer,
- 		user_id -> Integer,
--		created_at -> Timestamp,
++		user_id -> BigInt,
 +		created_at -> TimestamptzSqlite,
+-		user_id -> Integer,
+-		created_at -> Timestamp,
  	}
  }
  

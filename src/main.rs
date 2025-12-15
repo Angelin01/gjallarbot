@@ -1,5 +1,6 @@
 #![feature(trait_alias)]
 #![feature(async_fn_traits)]
+#![feature(trivial_bounds)]
 
 use crate::config::{Config, LogConfig};
 use anyhow::Result;
@@ -19,6 +20,8 @@ mod errors;
 mod services;
 mod views;
 mod schema;
+mod db;
+mod models;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,6 +30,9 @@ async fn main() -> Result<()> {
 	setup_logging(&config.log);
 
 	let config = Config::load()?;
+	let mut db_conn = db::establish_connection().await?;
+	data::migrate_old_data("data.json", &mut db_conn).await?;
+	return Ok(());
 
 	let mut bot = bot::client(&config).await?;
 

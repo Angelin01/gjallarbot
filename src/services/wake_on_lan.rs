@@ -4,6 +4,12 @@ use std::fmt;
 use std::net::Ipv4Addr;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
+use diesel::backend::Backend;
+use diesel::deserialize::{FromSql, FromSqlRow};
+use diesel::expression::AsExpression;
+use diesel::serialize::{IsNull, Output, ToSql};
+use diesel::sql_types::Text;
+use diesel::sqlite::Sqlite;
 use tokio::io;
 use tokio::net::UdpSocket;
 
@@ -12,7 +18,8 @@ const HEADER_SIZE: usize = 6;
 const MAC_REPETITIONS: usize = 16;
 const MAGIC_PACKET_SIZE: usize = HEADER_SIZE + (MAC_ADDRESS_SIZE * MAC_REPETITIONS);
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, AsExpression, FromSqlRow)]
+#[diesel(sql_type = Text)]
 pub struct MacAddress(pub [u8; MAC_ADDRESS_SIZE]);
 
 impl FromStr for MacAddress {
@@ -41,8 +48,25 @@ impl FromStr for MacAddress {
 
 impl fmt::Display for MacAddress {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		let parts: Vec<String> = self.0.iter().map(|byte| format!("{:02X}", byte)).collect();
-		write!(f, "{}", parts.join(":"))
+		write!(
+			f,
+			"{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+			self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
+		)
+	}
+}
+
+impl ToSql<Text, Sqlite> for MacAddress {
+	fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
+		out.set_value(self.to_string());
+		Ok(IsNull::No)
+	}
+}
+
+impl FromSql<Text, Sqlite> for MacAddress {
+	fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+		<String as FromSql<Text, Sqlite>>::from_sql(bytes)
+			.and_then(|s| Self::from_str(&s).map_err(Into::into))
 	}
 }
 
