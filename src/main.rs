@@ -28,8 +28,8 @@ async fn main() -> Result<()> {
 	let config = Config::load()?;
 
 	setup_logging(&config.log);
+	run_migrations().await?;
 
-	let config = Config::load()?;
 	let mut db_conn = db::establish_connection().await?;
 	data::migrate_old_data("data.json", &mut db_conn).await?;
 	return Ok(());
@@ -52,6 +52,12 @@ fn setup_logging(log_config: &LogConfig) {
 		.with_max_level(LevelFilter::INFO)
 		.with_env_filter(&log_config.filter)
 		.init();
+}
+
+async fn run_migrations() -> Result<()> {
+	let db_conn = db::establish_connection().await?;
+	db::run_migrations(db_conn).await?;
+	Ok(())
 }
 
 async fn graceful_shutdown(shard_manager: Arc<ShardManager>) {

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use servitor::ServitorData;
 use std::path::PathBuf;
 use std::sync::Arc;
+use log::{debug, info, warn};
 use tokio::sync::RwLock;
 use wake_on_lan::WakeOnLanData;
 
@@ -34,7 +35,10 @@ pub struct Data {
 	pub wake_on_lan: WakeOnLanData,
 	#[serde(default)]
 	pub servitor: ServitorData,
+	#[serde(default = "mk_false")]
+	pub migrated: bool,
 }
+fn mk_false() -> bool { false }
 
 pub type BotData = Arc<RwLock<PersistentJson<Data>>>;
 
@@ -48,17 +52,22 @@ where
 		return Ok(());
 	}
 
-	let old_data = PersistentJson::<Data>::new(path.as_ref())?;
+	let mut old_data = PersistentJson::<Data>::new(path.as_ref())?;
+	if old_data.migrated {
+		warn!("Detected old data, but it has already been migrated, it can be deleted safely");
+		return Ok(());
+	}
+
+	info!("Migrating old data");
 	conn.transaction::<_, anyhow::Error, _>(|conn| {
 		Box::pin(async move {
 			migrate_wake_on_lan(&old_data.wake_on_lan, conn).await?;
 			migrate_servitor(&old_data.servitor, conn).await?;
+			old_data.write().migrated = true;
 			Ok(())
 		})
 	})
 	.await
-
-	// TODO: delete old file
 }
 
 async fn migrate_wake_on_lan<C>(wake_on_lan_data: &WakeOnLanData, conn: &mut C) -> Result<()>
@@ -66,6 +75,7 @@ where
 	C: DbConnection,
 {
 	for (machine_name, machine_info) in wake_on_lan_data {
+		debug!("Migrating wake-on-lan machine {}", machine_name);
 		let new_machine = NewWakeOnLanMachine {
 			name: machine_name,
 			mac: &machine_info.mac,
@@ -118,6 +128,7 @@ where
 	C: DbConnection,
 {
 	for (server_name, server_info) in servitor_data {
+		debug!("Migrating servitor server {}", server_name);
 		let new_server = NewServitorServer {
 			name: server_name,
 			servitor: server_info.servitor.as_str(),

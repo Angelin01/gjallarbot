@@ -22,7 +22,8 @@ thiserror = "2.0.*"
 tokio = { version = "1.48.*", features = ["macros", "parking_lot", "rt-multi-thread", "signal"] }
 chrono = "0.4.*"
 diesel = { version = "2.3.*", default-features = false, features = ["sqlite", "without-deprecated", "chrono", "returning_clauses_for_sqlite_3_35"] }
-diesel-async = { version = "0.7.*", features = ["sqlite"] }
+diesel-async = { version = "0.7.*", features = ["sqlite", "async-connection-wrapper"] }
+diesel_migrations = { version = "2.3.*", features = ["sqlite"] }
 libsqlite3-sys = { version = "0.35.*", features = ["bundled"] }
 
 [profile.release]
