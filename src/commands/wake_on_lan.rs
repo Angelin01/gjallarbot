@@ -4,6 +4,7 @@ mod wake;
 
 use super::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
 use crate::bot::{BotError, Context};
+use crate::db::DbConnection;
 
 #[poise::command(
 	slash_command,
@@ -21,11 +22,11 @@ use crate::bot::{BotError, Context};
 	),
 	subcommand_required
 )]
-pub async fn wake_on_lan(_: Context<'_>) -> Result<(), BotError> {
+pub async fn wake_on_lan<D: DbConnection>(_: Context<'_, D>) -> Result<(), BotError> {
 	unreachable!("Can't call parent commands");
 }
 
-async fn autocomplete_machine_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
+async fn autocomplete_machine_name<D: DbConnection>(ctx: Context<'_, D>, partial: &str) -> Vec<String> {
 	ctx.data()
 		.data
 		.read()

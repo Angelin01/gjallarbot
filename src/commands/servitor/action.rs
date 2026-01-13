@@ -3,11 +3,12 @@ use super::autocomplete_server_name;
 use crate::bot::{BotError, Context};
 
 use crate::controllers::servitor::action as ctrl_serv_act;
+use crate::db::DbConnection;
 use crate::views::servitor::action as view_serv_act;
 
 #[poise::command(slash_command)]
-pub async fn start(
-	ctx: Context<'_>,
+pub async fn start<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	name: String,
@@ -23,8 +24,8 @@ pub async fn start(
 }
 
 #[poise::command(slash_command)]
-pub async fn stop(
-	ctx: Context<'_>,
+pub async fn stop<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	name: String,
@@ -40,8 +41,8 @@ pub async fn stop(
 }
 
 #[poise::command(slash_command)]
-pub async fn restart(
-	ctx: Context<'_>,
+pub async fn restart<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	name: String,
@@ -57,8 +58,8 @@ pub async fn restart(
 }
 
 #[poise::command(slash_command)]
-pub async fn reload(
-	ctx: Context<'_>,
+pub async fn reload<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	name: String,
@@ -74,8 +75,8 @@ pub async fn reload(
 }
 
 #[poise::command(slash_command)]
-pub async fn status(
-	ctx: Context<'_>,
+pub async fn status<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	name: String,

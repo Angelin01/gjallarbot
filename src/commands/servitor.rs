@@ -4,6 +4,7 @@ mod server;
 
 use crate::bot::{BotError, Context};
 use crate::commands::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
+use crate::db::DbConnection;
 
 #[poise::command(
 	slash_command,
@@ -24,11 +25,11 @@ use crate::commands::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
 	),
 	subcommand_required
 )]
-pub async fn servitor(_: Context<'_>) -> Result<(), BotError> {
+pub async fn servitor<D: DbConnection>(_: Context<'_, D>) -> Result<(), BotError> {
 	unreachable!("Can't call parent commands");
 }
 
-async fn autocomplete_server_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
+async fn autocomplete_server_name<D: DbConnection>(ctx: Context<'_, D>, partial: &str) -> Vec<String> {
 	ctx.data()
 		.data
 		.read()
@@ -41,7 +42,7 @@ async fn autocomplete_server_name(ctx: Context<'_>, partial: &str) -> Vec<String
 		.collect()
 }
 
-async fn autocomplete_servitor_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
+async fn autocomplete_servitor_name<D: DbConnection>(ctx: Context<'_, D>, partial: &str) -> Vec<String> {
 	ctx.data()
 		.servitor
 		.keys()

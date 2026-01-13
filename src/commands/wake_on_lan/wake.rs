@@ -3,10 +3,11 @@ use crate::commands::reply_no_mentions;
 use crate::commands::wake_on_lan::autocomplete_machine_name;
 use crate::services::wake_on_lan::UdpMagicPacketSender;
 use crate::{controllers, views};
+use crate::db::DbConnection;
 
 #[poise::command(slash_command)]
-pub async fn wake(
-	ctx: Context<'_>,
+pub async fn wake<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	name: String,

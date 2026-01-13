@@ -4,10 +4,11 @@ use crate::bot::{BotError, Context};
 use crate::controllers::servitor::authorization as ctrl_serv_auth;
 use crate::views::servitor::authorization as view_serv_auth;
 use serenity::all::{Role, User};
+use crate::db::DbConnection;
 
 #[poise::command(slash_command, owners_only, rename = "add-user")]
-pub async fn add_user(
-	ctx: Context<'_>,
+pub async fn add_user<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	server: String,
@@ -22,8 +23,8 @@ pub async fn add_user(
 }
 
 #[poise::command(slash_command, owners_only, rename = "remove-user")]
-pub async fn remove_user(
-	ctx: Context<'_>,
+pub async fn remove_user<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	server: String,
@@ -38,8 +39,8 @@ pub async fn remove_user(
 }
 
 #[poise::command(slash_command, owners_only, rename = "add-role")]
-pub async fn add_role(
-	ctx: Context<'_>,
+pub async fn add_role<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	server: String,
@@ -54,8 +55,8 @@ pub async fn add_role(
 }
 
 #[poise::command(slash_command, owners_only, rename = "remove-role")]
-pub async fn remove_role(
-	ctx: Context<'_>,
+pub async fn remove_role<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	server: String,

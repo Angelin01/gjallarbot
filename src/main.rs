@@ -32,9 +32,8 @@ async fn main() -> Result<()> {
 
 	let mut db_conn = db::establish_connection().await?;
 	data::migrate_old_data("data.json", &mut db_conn).await?;
-	return Ok(());
 
-	let mut bot = bot::client(&config).await?;
+	let mut bot = bot::client(&config, db_conn).await?;
 
 	drop(config);
 

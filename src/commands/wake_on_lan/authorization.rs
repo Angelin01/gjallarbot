@@ -5,10 +5,11 @@ use controllers::wake_on_lan::authorization as ctrl_wol_auth;
 use poise::serenity_prelude::{Role, User};
 use views::wake_on_lan::authorization as view_wol_auth;
 use crate::bot::{BotError, Context};
+use crate::db::DbConnection;
 
 #[poise::command(slash_command, owners_only, rename = "add-user")]
-pub async fn add_user(
-	ctx: Context<'_>,
+pub async fn add_user<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,
@@ -23,8 +24,8 @@ pub async fn add_user(
 }
 
 #[poise::command(slash_command, owners_only, rename = "remove-user")]
-pub async fn remove_user(
-	ctx: Context<'_>,
+pub async fn remove_user<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,
@@ -39,8 +40,8 @@ pub async fn remove_user(
 }
 
 #[poise::command(slash_command, owners_only, rename = "add-role")]
-pub async fn add_role(
-	ctx: Context<'_>,
+pub async fn add_role<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,
@@ -55,8 +56,8 @@ pub async fn add_role(
 }
 
 #[poise::command(slash_command, owners_only, rename = "remove-role")]
-pub async fn remove_role(
-	ctx: Context<'_>,
+pub async fn remove_role<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	machine_name: String,

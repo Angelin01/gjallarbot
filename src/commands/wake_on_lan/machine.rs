@@ -4,10 +4,11 @@ use crate::{controllers, views};
 use controllers::wake_on_lan::machine as ctrl_wol_mch;
 use views::wake_on_lan::machine as view_wol_mch;
 use crate::bot::{BotError, Context};
+use crate::db::DbConnection;
 
 #[poise::command(slash_command, owners_only, rename = "add-machine")]
-pub async fn add_machine(
-	ctx: Context<'_>,
+pub async fn add_machine<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"] name: String,
 	#[description = "Machine MAC Address as hex digits separated by :"] mac: String,
 ) -> Result<(), BotError> {
@@ -20,8 +21,8 @@ pub async fn add_machine(
 }
 
 #[poise::command(slash_command, owners_only, rename = "remove-machine")]
-pub async fn remove_machine(
-	ctx: Context<'_>,
+pub async fn remove_machine<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	name: String,
@@ -35,7 +36,7 @@ pub async fn remove_machine(
 }
 
 #[poise::command(slash_command, rename = "list-machines")]
-pub async fn list_machines(ctx: Context<'_>) -> Result<(), BotError> {
+pub async fn list_machines<D: DbConnection>(ctx: Context<'_, D>) -> Result<(), BotError> {
 	let embed = ctrl_wol_mch::list_machines(&ctx.data().data, async |info| {
 		view_wol_mch::list_machines_embed(info)
 	})
@@ -47,8 +48,8 @@ pub async fn list_machines(ctx: Context<'_>) -> Result<(), BotError> {
 }
 
 #[poise::command(slash_command, rename = "describe-machine")]
-pub async fn describe_machine(
-	ctx: Context<'_>,
+pub async fn describe_machine<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Machine name"]
 	#[autocomplete = "autocomplete_machine_name"]
 	name: String,

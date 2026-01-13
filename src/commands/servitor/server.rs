@@ -2,11 +2,12 @@ use super::super::reply_no_mentions;
 use super::{autocomplete_server_name, autocomplete_servitor_name};
 use crate::bot::{BotError, Context};
 use crate::controllers::servitor::server as ctrl_serv_srv;
+use crate::db::DbConnection;
 use crate::views::servitor::server as view_serv_srv;
 
 #[poise::command(slash_command, owners_only, rename = "add-server")]
-pub async fn add_server(
-	ctx: Context<'_>,
+pub async fn add_server<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"] name: String,
 	#[description = "Servitor instance"]
 	#[autocomplete = "autocomplete_servitor_name"]
@@ -30,8 +31,8 @@ pub async fn add_server(
 }
 
 #[poise::command(slash_command, owners_only, rename = "remove-server")]
-pub async fn remove_server(
-	ctx: Context<'_>,
+pub async fn remove_server<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"] name: String,
 ) -> Result<(), BotError> {
 	let result = ctrl_serv_srv::remove_server(&ctx.data().data, &name).await;
@@ -44,7 +45,7 @@ pub async fn remove_server(
 }
 
 #[poise::command(slash_command, rename = "list-servers")]
-pub async fn list_servers(ctx: Context<'_>) -> Result<(), BotError> {
+pub async fn list_servers<D: DbConnection>(ctx: Context<'_, D>) -> Result<(), BotError> {
 	let embed = ctrl_serv_srv::list_servers(&ctx.data().data, async |info| {
 		view_serv_srv::list_servers_embed(info)
 	})
@@ -56,8 +57,8 @@ pub async fn list_servers(ctx: Context<'_>) -> Result<(), BotError> {
 }
 
 #[poise::command(slash_command, rename = "describe-server")]
-pub async fn describe_server(
-	ctx: Context<'_>,
+pub async fn describe_server<D: DbConnection>(
+	ctx: Context<'_, D>,
 	#[description = "Server name"]
 	#[autocomplete = "autocomplete_server_name"]
 	name: String,
