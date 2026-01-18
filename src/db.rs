@@ -30,3 +30,32 @@ pub async fn run_migrations<D: DbConnection + 'static>(conn: D) -> Result<()> {
 	.await
 	.map_err(|e| anyhow::anyhow!(e))
 }
+
+#[cfg(test)]
+pub mod tests {
+	use super::*;
+
+	pub async fn setup_test_db() -> impl DbConnection {
+		let conn = SyncConnectionWrapper::<SqliteConnection>::establish(":memory:")
+			.await
+			.expect("Failed to create in-memory database");
+
+		let async_wrapper: AsyncConnectionWrapper<_> = AsyncConnectionWrapper::from(conn);
+		let conn = tokio::task::spawn_blocking(move || {
+			let mut wrapper = async_wrapper;
+			wrapper
+				.run_pending_migrations(MIGRATIONS)
+				.expect("Failed to run migrations");
+			wrapper.into_inner()
+		})
+		.await
+		.expect("Migration task panicked");
+
+		let mut conn = SyncConnectionWrapper::from(conn);
+		conn.batch_execute("PRAGMA foreign_keys = ON")
+			.await
+			.expect("Failed to enable foreign keys");
+
+		conn
+	}
+}

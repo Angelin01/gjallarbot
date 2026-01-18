@@ -12,7 +12,10 @@ pub async fn add_machine<D: DbConnection>(
 	#[description = "Machine name"] name: String,
 	#[description = "Machine MAC Address as hex digits separated by :"] mac: String,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_mch::add_machine(&ctx.data().data, &name, &mac).await;
+	let result = {
+		let mut conn = ctx.data().conn.lock().await;
+		ctrl_wol_mch::add_machine(&mut conn, &name, &mac).await
+	};
 	let embed = view_wol_mch::add_machine_embed(result, &name, &mac);
 
 	reply_no_mentions(ctx, embed).await?;

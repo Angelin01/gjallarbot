@@ -23,6 +23,11 @@ pub fn add_machine_embed(
 				"Invalid MAC Address",
 				format!("Mac address {mac_address} is invalid: {m}"),
 			),
+			AddMachineError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while adding the new machine, \
+					something is really wrong!"
+			),
 		},
 	}
 }
