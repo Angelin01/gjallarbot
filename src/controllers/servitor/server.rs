@@ -7,6 +7,7 @@ use crate::errors::UnexpectedError;
 use crate::models::servitor::NewServitorServer;
 use crate::schema::servitor_servers;
 use diesel::result::DatabaseErrorKind;
+use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 use log::info;
 use std::ops::AsyncFnOnce;
@@ -28,6 +29,9 @@ pub enum AddServerError {
 pub enum RemoveServerError {
 	#[error(transparent)]
 	Server(#[from] ServerError),
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
 pub async fn add_server<D: DbConnection>(
@@ -70,17 +74,26 @@ pub async fn add_server<D: DbConnection>(
 	Ok(())
 }
 
-pub async fn remove_server(data: &BotData, name: &str) -> Result<(), RemoveServerError> {
-	if !data.read().await.servitor.contains_key(name) {
-		return Err(ServerError::DoesNotExist {
-			server_name: name.to_string(),
-		})?;
-	}
+pub async fn remove_server<D: DbConnection>(
+	conn: &mut D,
+	name: &str,
+) -> Result<(), RemoveServerError> {
+	let affected = diesel::delete(
+		servitor_servers::table.filter(servitor_servers::name.eq(name)),
+	)
+	.execute(conn)
+	.await
+	.map_err(|e| {
+		RemoveServerError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e).context("Failed to delete server from database"),
+		))
+	})?;
 
-	{
-		let mut lock = data.write().await;
-		let mut data_write = lock.write();
-		data_write.servitor.remove(name);
+	if affected == 0 {
+		return Err(ServerError::DoesNotExist {
+			server_name: name.into(),
+		}
+		.into());
 	}
 
 	info!("Removed servitor server {name}");
@@ -202,26 +215,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn given_invalid_server_name_then_remove_server_returns_error_and_does_not_update_data() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar"
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
 
-		let result = remove_server(&data, "NonExistingServer").await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
 
-		let expected_data = BTreeMap::from([(
-			"SomeServer".to_string(),
-			ServerInfo {
-				servitor: "foo".to_string(),
-				unit_name: "bar".to_string(),
-				authorized_users: Default::default(),
-				authorized_roles: Default::default(),
-			},
-		)]);
+		let result = remove_server(&mut conn, "NonExistingServer").await;
 
 		assert_eq!(
 			result,
@@ -229,24 +227,22 @@ mod tests {
 				server_name: "NonExistingServer".to_string()
 			}))
 		);
-		assert_eq!(data.read().await.servitor, expected_data);
+		// Original server should still exist
+		let servers = get_all_servers(&mut conn).await;
+		assert_eq!(servers.len(), 1);
+		assert_eq!(servers[0].name, "SomeServer");
 	}
 
 	#[tokio::test]
 	async fn given_valid_input_then_remove_server_returns_success_and_removes_server() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar"
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
 
-		let result = remove_server(&data, "SomeServer").await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+
+		let result = remove_server(&mut conn, "SomeServer").await;
 
 		assert_eq!(result, Ok(()));
-		assert_eq!(data.read().await.servitor, BTreeMap::new());
+		assert!(get_all_servers(&mut conn).await.is_empty());
 	}
 
 	#[tokio::test]

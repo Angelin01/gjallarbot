@@ -37,7 +37,8 @@ pub async fn remove_server<D: DbConnection>(
 	ctx: Context<'_, D>,
 	#[description = "Server name"] name: String,
 ) -> Result<(), BotError> {
-	let result = ctrl_serv_srv::remove_server(&ctx.data().data, &name).await;
+	let mut conn = ctx.data().conn.lock().await;
+	let result = ctrl_serv_srv::remove_server(&mut *conn, &name).await;
 
 	let embed = view_serv_srv::remove_server_embed(result, &name);
 

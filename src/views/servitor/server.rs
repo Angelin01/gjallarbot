@@ -34,7 +34,10 @@ pub fn remove_server_embed(
 			server_name,
 			true,
 		),
-		Err(_) => embeds::invalid_servitor_server(server_name),
+		Err(e) => match e {
+			RemoveServerError::Server(_) => embeds::invalid_servitor_server(server_name),
+			RemoveServerError::Unexpected(_) => embeds::error("Error", "An unexpected error occurred while removing the server"),
+		},
 	}
 }
 
