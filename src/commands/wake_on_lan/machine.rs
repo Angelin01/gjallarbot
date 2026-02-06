@@ -30,7 +30,10 @@ pub async fn remove_machine<D: DbConnection>(
 	#[autocomplete = "autocomplete_machine_name"]
 	name: String,
 ) -> Result<(), BotError> {
-	let result = ctrl_wol_mch::remove_machine(&ctx.data().data, &name).await;
+	let result = {
+		let mut conn = ctx.data().conn.lock().await;
+		ctrl_wol_mch::remove_machine(&mut conn, &name).await
+	};
 	let embed = view_wol_mch::remove_machine_embed(result, &name);
 
 	reply_no_mentions(ctx, embed).await?;

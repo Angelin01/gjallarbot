@@ -6,6 +6,7 @@ use crate::errors::{InvalidMacError, UnexpectedError};
 use crate::models::wake_on_lan::NewWakeOnLanMachine;
 use crate::schema::wake_on_lan_machines;
 use diesel::result::DatabaseErrorKind;
+use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 use log::info;
 use std::ops::AsyncFnOnce;
@@ -27,6 +28,9 @@ pub enum AddMachineError {
 pub enum RemoveMachineError {
 	#[error(transparent)]
 	Machine(#[from] MachineError),
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
 pub async fn add_machine<D: DbConnection>(
@@ -61,20 +65,26 @@ pub async fn add_machine<D: DbConnection>(
 	Ok(())
 }
 
-pub async fn remove_machine(data: &BotData, name: &str) -> Result<(), RemoveMachineError> {
-	{
-		let read = data.read().await;
-		if !read.wake_on_lan.contains_key(name) {
-			return Err(MachineError::DoesNotExist {
-				machine_name: name.into(),
-			})?;
-		}
-	}
+pub async fn remove_machine<D: DbConnection>(
+	conn: &mut D,
+	name: &str,
+) -> Result<(), RemoveMachineError> {
+	let affected = diesel::delete(
+		wake_on_lan_machines::table.filter(wake_on_lan_machines::name.eq(name)),
+	)
+	.execute(conn)
+	.await
+	.map_err(|e| {
+		RemoveMachineError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e).context("Failed to delete machine from database"),
+		))
+	})?;
 
-	{
-		let mut lock = data.write().await;
-		let mut data_write = lock.write();
-		data_write.wake_on_lan.remove(name);
+	if affected == 0 {
+		return Err(MachineError::DoesNotExist {
+			machine_name: name.into(),
+		}
+		.into());
 	}
 
 	info!("Removed machine {name}");
@@ -213,27 +223,11 @@ mod tests {
 	#[tokio::test]
 	async fn given_nonexistent_machine_then_remove_machine_returns_error_and_does_not_modify_data()
 	{
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
 
-		let result = remove_machine(&data, "NonexistentMachine").await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let mut expected_data = BTreeMap::new();
-		expected_data.insert(
-			"ExistingMachine".to_string(),
-			WakeOnLanMachineInfo {
-				mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
-				authorized_users: Default::default(),
-				authorized_roles: Default::default(),
-			},
-		);
+		let result = remove_machine(&mut conn, "NonexistentMachine").await;
 
 		assert_eq!(
 			result,
@@ -241,27 +235,24 @@ mod tests {
 				machine_name: "NonexistentMachine".into(),
 			}))
 		);
-		assert_eq!(data.read().await.wake_on_lan, expected_data);
+
+		let machines = get_all_machines(&mut conn).await;
+		assert_eq!(machines.len(), 1);
+		assert_eq!(machines[0].name, "ExistingMachine");
 	}
 
 	#[tokio::test]
 	async fn given_existing_machine_then_remove_machine_returns_success_and_removes_machine() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"MachineToRemove": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
 
-		let result = remove_machine(&data, "MachineToRemove").await;
+		insert_test_machine(&mut conn, "MachineToRemove", "01:02:03:04:05:06").await;
 
-		let expected_data = BTreeMap::new();
+		let result = remove_machine(&mut conn, "MachineToRemove").await;
 
 		assert_eq!(result, Ok(()));
-		assert_eq!(data.read().await.wake_on_lan, expected_data);
+
+		let machines = get_all_machines(&mut conn).await;
+		assert!(machines.is_empty());
 	}
 
 	#[tokio::test]

@@ -42,7 +42,12 @@ pub fn remove_machine_embed(
 			machine_name,
 			true,
 		),
-		Err(_) => embeds::invalid_machine(machine_name),
+		Err(RemoveMachineError::Machine(_)) => embeds::invalid_machine(machine_name),
+		Err(RemoveMachineError::Unexpected(_)) => embeds::internal_error(
+			"Unexpected Error",
+			"Received an unexpected error while removing the machine, \
+				something is really wrong!"
+		),
 	}
 }
 
