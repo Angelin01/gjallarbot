@@ -1,9 +1,11 @@
-use crate::controllers::servitor::server::{AddServerError, RemoveServerError};
-use crate::controllers::servitor::ServerError;
-use crate::data::servitor::{ServerInfo, ServitorData};
+use crate::controllers::servitor::server::{
+	AddServerError, DescribeServerError, ListServersError, RemoveServerError, ServerDescription,
+};
 use crate::embeds;
+use crate::models::servitor::ServitorServer;
 use crate::views::format_list;
 use serenity::builder::CreateEmbed;
+use std::collections::BTreeSet;
 
 pub fn add_server_embed(
 	result: Result<(), AddServerError>,
@@ -41,26 +43,36 @@ pub fn remove_server_embed(
 	}
 }
 
-pub fn list_servers_embed(servitor_data: &ServitorData) -> CreateEmbed {
-	let description = if servitor_data.is_empty() {
-		"There are no servitor servers configured".to_string()
-	} else {
-		let server_list = servitor_data
-			.iter()
-			.map(|(name, info)| format!("- {}: {} - `{}`", name, info.servitor, info.unit_name))
-			.collect::<Vec<String>>()
-			.join("\n");
-		format!("Configured servers:\n{server_list}")
-	};
+pub fn list_servers_embed(result: Result<Vec<ServitorServer>, ListServersError>) -> CreateEmbed {
+	match result {
+		Ok(servers) => {
+			let description = if servers.is_empty() {
+				"There are no servitor servers configured".to_string()
+			} else {
+				let server_list = servers
+					.iter()
+					.map(|s| format!("- {}: {} - `{}`", s.name, s.servitor, s.unit_name))
+					.collect::<Vec<String>>()
+					.join("\n");
+				format!("Configured servers:\n{server_list}")
+			};
 
-	embeds::info("Servitor server list", description)
+			embeds::info("Servitor server list", description)
+		}
+		Err(ListServersError::Unexpected(_)) => embeds::error("Error", "An unexpected error occurred while listing servers"),
+	}
 }
 
-pub fn describe_server_embed(result: Result<&ServerInfo, ServerError>, name: &str) -> CreateEmbed {
+pub fn describe_server_embed(
+	result: Result<ServerDescription, DescribeServerError>,
+	name: &str,
+) -> CreateEmbed {
 	match result {
-		Ok(server_info) => {
-			let users = format_list(&server_info.authorized_users, |id| format!("<@{id}>"));
-			let roles = format_list(&server_info.authorized_roles, |id| format!("<@&{id}>"));
+		Ok(desc) => {
+			let user_set: BTreeSet<_> = desc.authorized_users.into_iter().collect();
+			let role_set: BTreeSet<_> = desc.authorized_roles.into_iter().collect();
+			let users = format_list(&user_set, |id| format!("<@{id}>"));
+			let roles = format_list(&role_set, |id| format!("<@&{id}>"));
 
 			embeds::info(
 				format!("Servitor server {name}"),
@@ -69,11 +81,12 @@ pub fn describe_server_embed(result: Result<&ServerInfo, ServerError>, name: &st
 - Unit Name: `{}`\n\
 - Authorized Users: {users}\n\
 - Authorized Roles: {roles}",
-					server_info.servitor, server_info.unit_name
+					desc.server.servitor, desc.server.unit_name
 				),
 			)
 		}
-		Err(_) => embeds::invalid_servitor_server(name),
+		Err(DescribeServerError::Server(_)) => embeds::invalid_servitor_server(name),
+		Err(DescribeServerError::Unexpected(_)) => embeds::error("Error", "An unexpected error occurred while describing the server"),
 	}
 }
 
@@ -81,9 +94,7 @@ pub fn describe_server_embed(result: Result<&ServerInfo, ServerError>, name: &st
 mod tests {
 	use super::*;
 	use crate::controllers::servitor::ServerError;
-	use crate::data::servitor::ServerInfo;
 	use serenity::all::{Colour, RoleId, UserId};
-	use std::collections::BTreeSet;
 
 	#[test]
 	fn given_add_server_error_with_invalid_servitor_then_reply_with_invalid_servitor() {
@@ -165,7 +176,7 @@ mod tests {
 
 	#[test]
 	fn given_no_servers_then_list_servers_replies_with_empty_response() {
-		let embed = list_servers_embed(&ServitorData::new());
+		let embed = list_servers_embed(Ok(vec![]));
 
 		let expected_embed = CreateEmbed::default()
 			.title(":information_source: Servitor server list")
@@ -177,42 +188,39 @@ mod tests {
 
 	#[test]
 	fn given_some_servers_then_list_servers_replies_with_formatted_list() {
-		let data = ServitorData::from([
-			(
-				"ServerOne".to_string(),
-				ServerInfo {
-					servitor: "ServitorOne".to_string(),
-					unit_name: "unit_one.service".to_string(),
-					authorized_users: Default::default(),
-					authorized_roles: Default::default(),
-				},
-			),
-			(
-				"ServerTwo".to_string(),
-				ServerInfo {
-					servitor: "ServitorTwo".to_string(),
-					unit_name: "unit_two.service".to_string(),
-					authorized_users: Default::default(),
-					authorized_roles: Default::default(),
-				},
-			),
-			(
-				"ServerThree".to_string(),
-				ServerInfo {
-					servitor: "ServitorThree".to_string(),
-					unit_name: "unit_three.service".to_string(),
-					authorized_users: Default::default(),
-					authorized_roles: Default::default(),
-				},
-			),
-		]);
+		let now = chrono::Utc::now();
+		let servers = vec![
+			ServitorServer {
+				id: 1,
+				name: "ServerOne".to_string(),
+				servitor: "ServitorOne".to_string(),
+				unit_name: "unit_one.service".to_string(),
+				created_at: now,
+				updated_at: now,
+			},
+			ServitorServer {
+				id: 2,
+				name: "ServerThree".to_string(),
+				servitor: "ServitorThree".to_string(),
+				unit_name: "unit_three.service".to_string(),
+				created_at: now,
+				updated_at: now,
+			},
+			ServitorServer {
+				id: 3,
+				name: "ServerTwo".to_string(),
+				servitor: "ServitorTwo".to_string(),
+				unit_name: "unit_two.service".to_string(),
+				created_at: now,
+				updated_at: now,
+			},
+		];
 
-		let embed = list_servers_embed(&data);
+		let embed = list_servers_embed(Ok(servers));
 
 		let expected_embed = CreateEmbed::default()
 			.title(":information_source: Servitor server list")
 			.colour(Colour(0x55acee))
-			// Order is not important here, so we adjust the test to match output order based on data
 			.description(
 				"Configured servers:\n\
 - ServerOne: ServitorOne - `unit_one.service`\n\
@@ -225,9 +233,9 @@ mod tests {
 
 	#[test]
 	fn given_describe_server_with_non_exiting_server_then_reply_with_non_exiting_server() {
-		let result = Err(ServerError::DoesNotExist {
+		let result = Err(DescribeServerError::Server(ServerError::DoesNotExist {
 			server_name: "NonExistingServer".to_string(),
-		});
+		}));
 
 		let embed = describe_server_embed(result, "NonExistingServer");
 
@@ -241,14 +249,21 @@ mod tests {
 
 	#[test]
 	fn given_successful_describe_server_with_no_users_or_roles_then_reply_with_server_info() {
-		let server_info = ServerInfo {
-			servitor: "foo".to_string(),
-			unit_name: "bar".to_string(),
-			authorized_users: Default::default(),
-			authorized_roles: Default::default(),
+		let now = chrono::Utc::now();
+		let desc = ServerDescription {
+			server: ServitorServer {
+				id: 1,
+				name: "SomeServer".to_string(),
+				servitor: "foo".to_string(),
+				unit_name: "bar".to_string(),
+				created_at: now,
+				updated_at: now,
+			},
+			authorized_users: vec![],
+			authorized_roles: vec![],
 		};
 
-		let embed = describe_server_embed(Ok(&server_info), "SomeServer");
+		let embed = describe_server_embed(Ok(desc), "SomeServer");
 
 		let expected_embed = CreateEmbed::default()
 			.title(":information_source: Servitor server SomeServer")
@@ -266,20 +281,27 @@ mod tests {
 
 	#[test]
 	fn given_successful_describe_server_with_users_and_roles_then_reply_with_server_info() {
-		let server_info = ServerInfo {
-			servitor: "foo".to_string(),
-			unit_name: "bar".to_string(),
-			authorized_users: BTreeSet::from([
+		let now = chrono::Utc::now();
+		let desc = ServerDescription {
+			server: ServitorServer {
+				id: 1,
+				name: "SomeServer".to_string(),
+				servitor: "foo".to_string(),
+				unit_name: "bar".to_string(),
+				created_at: now,
+				updated_at: now,
+			},
+			authorized_users: vec![
 				UserId::new(12345678901234567),
 				UserId::new(12345678901234568),
-			]),
-			authorized_roles: BTreeSet::from([
+			],
+			authorized_roles: vec![
 				RoleId::new(98765432109876543),
 				RoleId::new(98765432109876544),
-			]),
+			],
 		};
 
-		let embed = describe_server_embed(Ok(&server_info), "SomeServer");
+		let embed = describe_server_embed(Ok(desc), "SomeServer");
 
 		let expected_embed = CreateEmbed::default()
 			.title(":information_source: Servitor server SomeServer")

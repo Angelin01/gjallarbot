@@ -49,10 +49,11 @@ pub async fn remove_server<D: DbConnection>(
 
 #[poise::command(slash_command, rename = "list-servers")]
 pub async fn list_servers<D: DbConnection>(ctx: Context<'_, D>) -> Result<(), BotError> {
-	let embed = ctrl_serv_srv::list_servers(&ctx.data().data, async |info| {
-		view_serv_srv::list_servers_embed(info)
-	})
-	.await;
+	let result = {
+		let mut conn = ctx.data().conn.lock().await;
+		ctrl_serv_srv::list_servers(&mut *conn).await
+	};
+	let embed = view_serv_srv::list_servers_embed(result);
 
 	reply_no_mentions(ctx, embed).await?;
 
@@ -66,10 +67,11 @@ pub async fn describe_server<D: DbConnection>(
 	#[autocomplete = "autocomplete_server_name"]
 	name: String,
 ) -> Result<(), BotError> {
-	let embed = ctrl_serv_srv::describe_server(&ctx.data().data, &name, async |info, name| {
-		view_serv_srv::describe_server_embed(info, name)
-	})
-	.await;
+	let result = {
+		let mut conn = ctx.data().conn.lock().await;
+		ctrl_serv_srv::describe_server(&mut *conn, &name).await
+	};
+	let embed = view_serv_srv::describe_server_embed(result, &name);
 
 	reply_no_mentions(ctx, embed).await?;
 

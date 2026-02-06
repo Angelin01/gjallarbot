@@ -1,16 +1,16 @@
-use super::{get_server_info, ServerError};
+use super::ServerError;
 use crate::controllers::servitor::server::AddServerError::InvalidServitor;
-use crate::data::servitor::{ServerInfo, ServitorData};
-use crate::data::BotData;
 use crate::db::DbConnection;
 use crate::errors::UnexpectedError;
-use crate::models::servitor::NewServitorServer;
-use crate::schema::servitor_servers;
+use crate::models::servitor::{
+	NewServitorServer, ServitorServer, ServitorServerAuthorizedRole, ServitorServerAuthorizedUser,
+};
+use crate::schema::{servitor_server_authorized_roles, servitor_server_authorized_users, servitor_servers};
 use diesel::result::DatabaseErrorKind;
 use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 use log::info;
-use std::ops::AsyncFnOnce;
+use poise::serenity_prelude::{RoleId, UserId};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -32,6 +32,28 @@ pub enum RemoveServerError {
 
 	#[error("An unexpected error occurred")]
 	Unexpected(#[from] UnexpectedError),
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ListServersError {
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum DescribeServerError {
+	#[error(transparent)]
+	Server(#[from] ServerError),
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
+}
+
+#[derive(Debug)]
+pub struct ServerDescription {
+	pub server: ServitorServer,
+	pub authorized_users: Vec<UserId>,
+	pub authorized_roles: Vec<RoleId>,
 }
 
 pub async fn add_server<D: DbConnection>(
@@ -101,35 +123,81 @@ pub async fn remove_server<D: DbConnection>(
 	Ok(())
 }
 
-pub trait ListServersCallback<T> = AsyncFnOnce(&ServitorData) -> T;
-pub async fn list_servers<T, F: ListServersCallback<T>>(data: &BotData, func: F) -> T {
-	let read = data.read().await;
-
-	func.async_call_once((&read.servitor,)).await
+pub async fn list_servers<D: DbConnection>(
+	conn: &mut D,
+) -> Result<Vec<ServitorServer>, ListServersError> {
+	servitor_servers::table
+		.load(conn)
+		.await
+		.map_err(|e| {
+			ListServersError::Unexpected(UnexpectedError(
+				anyhow::Error::new(e).context("Failed to load servers from database"),
+			))
+		})
 }
 
-pub trait DescribeServerCallback<T> = AsyncFnOnce(Result<&ServerInfo, ServerError>, &str) -> T;
-pub async fn describe_server<T, F: DescribeServerCallback<T>>(
-	data: &BotData,
+pub async fn describe_server<D: DbConnection>(
+	conn: &mut D,
 	name: &str,
-	func: F,
-) -> T {
-	let read = data.read().await;
+) -> Result<ServerDescription, DescribeServerError> {
+	let server: ServitorServer = servitor_servers::table
+		.filter(servitor_servers::name.eq(name))
+		.first(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::NotFound => ServerError::DoesNotExist {
+				server_name: name.into(),
+			}
+			.into(),
+			other => DescribeServerError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other).context("Failed to query server from database"),
+			)),
+		})?;
 
-	let server = get_server_info(&read, name).await;
+	let authorized_users: Vec<ServitorServerAuthorizedUser> =
+		servitor_server_authorized_users::table
+			.filter(servitor_server_authorized_users::server_id.eq(server.id))
+			.load(conn)
+			.await
+			.map_err(|e| {
+				DescribeServerError::Unexpected(UnexpectedError(
+					anyhow::Error::new(e)
+						.context("Failed to query authorized users from database"),
+				))
+			})?;
 
-	func.async_call_once((server, name)).await
+	let authorized_roles: Vec<ServitorServerAuthorizedRole> =
+		servitor_server_authorized_roles::table
+			.filter(servitor_server_authorized_roles::server_id.eq(server.id))
+			.load(conn)
+			.await
+			.map_err(|e| {
+				DescribeServerError::Unexpected(UnexpectedError(
+					anyhow::Error::new(e)
+						.context("Failed to query authorized roles from database"),
+				))
+			})?;
+
+	Ok(ServerDescription {
+		server,
+		authorized_users: authorized_users
+			.into_iter()
+			.map(|u| UserId::new(u.user_id as u64))
+			.collect(),
+		authorized_roles: authorized_roles
+			.into_iter()
+			.map(|r| RoleId::new(r.role_id as u64))
+			.collect(),
+	})
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::data::servitor::ServerInfo;
-	use crate::data::tests::mock_data;
 	use crate::db::tests::setup_test_db;
-	use crate::models::servitor::ServitorServer;
-	use serde_json::json;
-	use std::collections::BTreeMap;
+	use crate::models::servitor::{
+		NewServitorServerAuthorizedRole, NewServitorServerAuthorizedUser,
+	};
 
 	async fn insert_test_server<D: DbConnection>(
 		conn: &mut D,
@@ -246,82 +314,106 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn given_servitor_data_then_list_servers_provides_correct_data_to_callback() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar"
-				}
-			}
-		})));
+	async fn given_no_servers_then_list_servers_returns_empty_vec() {
+		let mut conn = setup_test_db().await;
 
-		list_servers(&data, async |data| {
-			assert_eq!(
-				*data,
-				BTreeMap::from([(
-					"SomeServer".to_string(),
-					ServerInfo {
-						servitor: "foo".to_string(),
-						unit_name: "bar".to_string(),
-						authorized_users: Default::default(),
-						authorized_roles: Default::default(),
-					}
-				)])
-			)
-		})
-		.await;
+		let result = list_servers(&mut conn).await.unwrap();
+
+		assert!(result.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_nonexistent_server_then_describe_server_callbacks_with_error() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar"
-				}
-			}
-		})));
+	async fn given_servers_exist_then_list_servers_returns_all_servers() {
+		let mut conn = setup_test_db().await;
 
-		describe_server(&data, "NonExistingServer", async |result, name| {
-			assert_eq!(name, "NonExistingServer");
-			assert_eq!(
-				result,
-				Err(ServerError::DoesNotExist {
-					server_name: "NonExistingServer".to_string()
-				})
-			)
-		})
-		.await;
+		insert_test_server(&mut conn, "ServerA", "foo", "unit_a.service").await;
+		insert_test_server(&mut conn, "ServerB", "bar", "unit_b.service").await;
+
+		let result = list_servers(&mut conn).await.unwrap();
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "ServerA");
+		assert_eq!(result[0].servitor, "foo");
+		assert_eq!(result[0].unit_name, "unit_a.service");
+		assert_eq!(result[1].name, "ServerB");
+		assert_eq!(result[1].servitor, "bar");
+		assert_eq!(result[1].unit_name, "unit_b.service");
 	}
 
 	#[tokio::test]
-	async fn given_existing_server_then_describe_server_calls_function_with_server_info() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar"
-				}
-			}
-		})));
+	async fn given_nonexistent_server_then_describe_server_returns_error() {
+		let mut conn = setup_test_db().await;
 
-		describe_server(&data, "SomeServer", async |result, name| {
-			assert_eq!(name, "SomeServer");
-			match result {
-				Ok(server) => assert_eq!(
-					server,
-					&ServerInfo {
-						servitor: "foo".to_string(),
-						unit_name: "bar".to_string(),
-						authorized_users: Default::default(),
-						authorized_roles: Default::default(),
-					}
-				),
-				Err(_) => assert!(false, "received error when it was not expected"),
-			}
-		})
-		.await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
+
+		let result = describe_server(&mut conn, "NonExistentServer").await;
+
+		assert_eq!(
+			result.unwrap_err(),
+			DescribeServerError::Server(ServerError::DoesNotExist {
+				server_name: "NonExistentServer".into(),
+			})
+		);
+	}
+
+	#[tokio::test]
+	async fn given_existing_server_then_describe_server_returns_server_info() {
+		let mut conn = setup_test_db().await;
+
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
+
+		let result = describe_server(&mut conn, "ExistingServer").await.unwrap();
+
+		assert_eq!(result.server.name, "ExistingServer");
+		assert_eq!(result.server.servitor, "foo");
+		assert_eq!(result.server.unit_name, "bar");
+		assert!(result.authorized_users.is_empty());
+		assert!(result.authorized_roles.is_empty());
+	}
+
+	#[tokio::test]
+	async fn given_server_with_authorized_users_and_roles_then_describe_server_returns_them() {
+		let mut conn = setup_test_db().await;
+
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
+
+		// Get the server id
+		let server: ServitorServer = servitor_servers::table
+			.filter(servitor_servers::name.eq("ExistingServer"))
+			.first(&mut conn)
+			.await
+			.unwrap();
+
+		// Insert authorized users
+		diesel::insert_into(servitor_server_authorized_users::table)
+			.values(&NewServitorServerAuthorizedUser {
+				server_id: server.id,
+				user_id: 12345678901234567,
+			})
+			.execute(&mut conn)
+			.await
+			.unwrap();
+
+		// Insert authorized roles
+		diesel::insert_into(servitor_server_authorized_roles::table)
+			.values(&NewServitorServerAuthorizedRole {
+				server_id: server.id,
+				role_id: 98765432109876543,
+			})
+			.execute(&mut conn)
+			.await
+			.unwrap();
+
+		let result = describe_server(&mut conn, "ExistingServer").await.unwrap();
+
+		assert_eq!(result.server.name, "ExistingServer");
+		assert_eq!(
+			result.authorized_users,
+			vec![UserId::new(12345678901234567)]
+		);
+		assert_eq!(
+			result.authorized_roles,
+			vec![RoleId::new(98765432109876543)]
+		);
 	}
 }
