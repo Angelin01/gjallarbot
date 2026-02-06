@@ -18,7 +18,8 @@ pub fn add_server_embed(
 			.field("Unit Name", unit_name, true),
 		Err(e) => match e {
 			AddServerError::InvalidServitor { .. } => embeds::error("Invalid Servitor", format!("There is no such servitor instance with name {servitor}")),
-			AddServerError::Server(_) => embeds::error("Duplicate name", format!("A servitor server with name {server_name} already exists, try a different name"))
+			AddServerError::Server(_) => embeds::error("Duplicate name", format!("A servitor server with name {server_name} already exists, try a different name")),
+			AddServerError::Unexpected(_) => embeds::error("Error", "An unexpected error occurred while adding the server"),
 		}
 	}
 }

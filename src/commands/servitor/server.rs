@@ -14,9 +14,11 @@ pub async fn add_server<D: DbConnection>(
 	servitor: String,
 	#[description = "Unit name"] unit_name: String,
 ) -> Result<(), BotError> {
+	let mut conn = ctx.data().conn.lock().await;
+	let servitor_names: Vec<String> = ctx.data().servitor.keys().cloned().collect();
 	let result = ctrl_serv_srv::add_server(
-		&ctx.data().data,
-		&ctx.data().servitor,
+		&mut *conn,
+		&servitor_names,
 		&name,
 		&servitor,
 		&unit_name,
