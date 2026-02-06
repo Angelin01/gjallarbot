@@ -1,9 +1,9 @@
 use super::{get_machine_info, MachineError};
-use crate::data::wake_on_lan::{WakeOnLanData, WakeOnLanMachineInfo};
+use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 use crate::data::BotData;
 use crate::db::DbConnection;
 use crate::errors::{InvalidMacError, UnexpectedError};
-use crate::models::wake_on_lan::NewWakeOnLanMachine;
+use crate::models::wake_on_lan::{NewWakeOnLanMachine, WakeOnLanMachine};
 use crate::schema::wake_on_lan_machines;
 use diesel::result::DatabaseErrorKind;
 use diesel::{ExpressionMethods, QueryDsl};
@@ -29,6 +29,12 @@ pub enum RemoveMachineError {
 	#[error(transparent)]
 	Machine(#[from] MachineError),
 
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ListMachinesError {
 	#[error("An unexpected error occurred")]
 	Unexpected(#[from] UnexpectedError),
 }
@@ -92,11 +98,17 @@ pub async fn remove_machine<D: DbConnection>(
 	Ok(())
 }
 
-pub trait ListMachinesCallback<T> = AsyncFnOnce(&WakeOnLanData) -> T;
-pub async fn list_machines<T, F: ListMachinesCallback<T>>(data: &BotData, func: F) -> T {
-	let read = data.read().await;
-
-	func.async_call_once((&read.wake_on_lan,)).await
+pub async fn list_machines<D: DbConnection>(
+	conn: &mut D,
+) -> Result<Vec<WakeOnLanMachine>, ListMachinesError> {
+	wake_on_lan_machines::table
+		.load(conn)
+		.await
+		.map_err(|e| {
+			ListMachinesError::Unexpected(UnexpectedError(
+				anyhow::Error::new(e).context("Failed to load machines from database"),
+			))
+		})
 }
 
 pub trait DescribeMachineCallback<T> =
@@ -118,10 +130,8 @@ mod tests {
 	use super::*;
 	use crate::data::tests::mock_data;
 	use crate::db::tests::setup_test_db;
-	use crate::models::wake_on_lan::WakeOnLanMachine;
 	use crate::services::wake_on_lan::MacAddress;
 	use serde_json::json;
-	use std::collections::BTreeMap;
 
 	async fn insert_test_machine<D: DbConnection>(
 		conn: &mut D,
@@ -256,31 +266,28 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn given_wake_on_lan_data_then_list_machines_provides_correct_data_to_callback() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_no_machines_then_list_machines_returns_empty_vec() {
+		let mut conn = setup_test_db().await;
 
-		list_machines(&data, async |data| {
-			assert_eq!(
-				*data,
-				BTreeMap::from([(
-					"ExistingMachine".to_string(),
-					WakeOnLanMachineInfo {
-						mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
-						authorized_users: Default::default(),
-						authorized_roles: Default::default(),
-					}
-				)])
-			)
-		})
-		.await;
+		let result = list_machines(&mut conn).await.unwrap();
+
+		assert!(result.is_empty());
+	}
+
+	#[tokio::test]
+	async fn given_machines_exist_then_list_machines_returns_all_machines() {
+		let mut conn = setup_test_db().await;
+
+		insert_test_machine(&mut conn, "MachineA", "01:02:03:04:05:06").await;
+		insert_test_machine(&mut conn, "MachineB", "07:08:09:0A:0B:0C").await;
+
+		let result = list_machines(&mut conn).await.unwrap();
+
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0].name, "MachineA");
+		assert_eq!(result[0].mac, MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]));
+		assert_eq!(result[1].name, "MachineB");
+		assert_eq!(result[1].mac, MacAddress([0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C]));
 	}
 
 	#[tokio::test]

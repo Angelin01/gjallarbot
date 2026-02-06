@@ -43,10 +43,11 @@ pub async fn remove_machine<D: DbConnection>(
 
 #[poise::command(slash_command, rename = "list-machines")]
 pub async fn list_machines<D: DbConnection>(ctx: Context<'_, D>) -> Result<(), BotError> {
-	let embed = ctrl_wol_mch::list_machines(&ctx.data().data, async |info| {
-		view_wol_mch::list_machines_embed(info)
-	})
-	.await;
+	let result = {
+		let mut conn = ctx.data().conn.lock().await;
+		ctrl_wol_mch::list_machines(&mut conn).await
+	};
+	let embed = view_wol_mch::list_machines_embed(result);
 
 	reply_no_mentions(ctx, embed).await?;
 

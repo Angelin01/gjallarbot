@@ -1,8 +1,9 @@
 use super::super::format_list;
-use crate::controllers::wake_on_lan::machine::{AddMachineError, RemoveMachineError};
+use crate::controllers::wake_on_lan::machine::{AddMachineError, ListMachinesError, RemoveMachineError};
 use crate::controllers::wake_on_lan::MachineError;
-use crate::data::wake_on_lan::{WakeOnLanData, WakeOnLanMachineInfo};
+use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 use crate::embeds;
+use crate::models::wake_on_lan::WakeOnLanMachine;
 use serenity::builder::CreateEmbed;
 
 pub fn add_machine_embed(
@@ -51,19 +52,28 @@ pub fn remove_machine_embed(
 	}
 }
 
-pub fn list_machines_embed(wake_on_lan_data: &WakeOnLanData) -> CreateEmbed {
-	let description = if wake_on_lan_data.is_empty() {
-		"There are no machines configured".to_string()
-	} else {
-		let machine_list = wake_on_lan_data
-			.iter()
-			.map(|m| format!("- {}: `{}`", m.0, m.1.mac))
-			.collect::<Vec<String>>()
-			.join("\n");
-		format!("Configured machines:\n{machine_list}")
-	};
+pub fn list_machines_embed(result: Result<Vec<WakeOnLanMachine>, ListMachinesError>) -> CreateEmbed {
+	match result {
+		Ok(machines) => {
+			let description = if machines.is_empty() {
+				"There are no machines configured".to_string()
+			} else {
+				let machine_list = machines
+					.iter()
+					.map(|m| format!("- {}: `{}`", m.name, m.mac))
+					.collect::<Vec<String>>()
+					.join("\n");
+				format!("Configured machines:\n{machine_list}")
+			};
 
-	embeds::info("Machine list", description)
+			embeds::info("Machine list", description)
+		}
+		Err(ListMachinesError::Unexpected(_)) => embeds::internal_error(
+			"Unexpected Error",
+			"Received an unexpected error while listing machines, \
+				something is really wrong!"
+		),
+	}
 }
 
 pub fn describe_machine_embed(
@@ -195,7 +205,7 @@ mod tests {
 
 	#[test]
 	fn given_no_added_machines_then_list_machines_replies_with_empty_response() {
-		let embed = list_machines_embed(&WakeOnLanData::new());
+		let embed = list_machines_embed(Ok(vec![]));
 
 		let expected_embed = CreateEmbed::default()
 			.title(":information_source: Machine list")
@@ -207,34 +217,32 @@ mod tests {
 
 	#[test]
 	fn given_some_machines_then_list_machines_replies_formatted_list() {
-		let data = WakeOnLanData::from([
-			(
-				"MachineOne".to_string(),
-				WakeOnLanMachineInfo {
-					mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
-					authorized_users: Default::default(),
-					authorized_roles: Default::default(),
-				},
-			),
-			(
-				"MachineTwo".to_string(),
-				WakeOnLanMachineInfo {
-					mac: MacAddress([0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C]),
-					authorized_users: Default::default(),
-					authorized_roles: Default::default(),
-				},
-			),
-			(
-				"MachineThree".to_string(),
-				WakeOnLanMachineInfo {
-					mac: MacAddress([0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12]),
-					authorized_users: Default::default(),
-					authorized_roles: Default::default(),
-				},
-			),
-		]);
+		let now = chrono::Utc::now();
+		let machines = vec![
+			WakeOnLanMachine {
+				id: 1,
+				name: "MachineOne".to_string(),
+				mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+				created_at: now,
+				updated_at: now,
+			},
+			WakeOnLanMachine {
+				id: 2,
+				name: "MachineThree".to_string(),
+				mac: MacAddress([0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12]),
+				created_at: now,
+				updated_at: now,
+			},
+			WakeOnLanMachine {
+				id: 3,
+				name: "MachineTwo".to_string(),
+				mac: MacAddress([0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C]),
+				created_at: now,
+				updated_at: now,
+			},
+		];
 
-		let embed = list_machines_embed(&data);
+		let embed = list_machines_embed(Ok(machines));
 
 		let expected_embed = CreateEmbed::default()
 			.title(":information_source: Machine list")
