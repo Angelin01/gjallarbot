@@ -1,15 +1,19 @@
-use super::{get_machine_info, MachineError};
-use crate::data::wake_on_lan::WakeOnLanMachineInfo;
-use crate::data::BotData;
+use super::MachineError;
 use crate::db::DbConnection;
 use crate::errors::{InvalidMacError, UnexpectedError};
-use crate::models::wake_on_lan::{NewWakeOnLanMachine, WakeOnLanMachine};
-use crate::schema::wake_on_lan_machines;
+use crate::models::wake_on_lan::{
+	NewWakeOnLanMachine, WakeOnLanMachine, WakeOnLanMachineAuthorizedRole,
+	WakeOnLanMachineAuthorizedUser,
+};
+use crate::schema::{
+	wake_on_lan_machines, wake_on_lan_machines_authorized_roles,
+	wake_on_lan_machines_authorized_users,
+};
 use diesel::result::DatabaseErrorKind;
 use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 use log::info;
-use std::ops::AsyncFnOnce;
+use poise::serenity_prelude::{RoleId, UserId};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -37,6 +41,22 @@ pub enum RemoveMachineError {
 pub enum ListMachinesError {
 	#[error("An unexpected error occurred")]
 	Unexpected(#[from] UnexpectedError),
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum DescribeMachineError {
+	#[error(transparent)]
+	Machine(#[from] MachineError),
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
+}
+
+#[derive(Debug)]
+pub struct MachineDescription {
+	pub machine: WakeOnLanMachine,
+	pub authorized_users: Vec<UserId>,
+	pub authorized_roles: Vec<RoleId>,
 }
 
 pub async fn add_machine<D: DbConnection>(
@@ -111,27 +131,69 @@ pub async fn list_machines<D: DbConnection>(
 		})
 }
 
-pub trait DescribeMachineCallback<T> =
-	AsyncFnOnce(Result<&WakeOnLanMachineInfo, MachineError>, &str) -> T;
-pub async fn describe_machine<T, F: DescribeMachineCallback<T>>(
-	data: &BotData,
+pub async fn describe_machine<D: DbConnection>(
+	conn: &mut D,
 	name: &str,
-	func: F,
-) -> T {
-	let read = data.read().await;
+) -> Result<MachineDescription, DescribeMachineError> {
+	let machine: WakeOnLanMachine = wake_on_lan_machines::table
+		.filter(wake_on_lan_machines::name.eq(name))
+		.first(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::NotFound => MachineError::DoesNotExist {
+				machine_name: name.into(),
+			}
+			.into(),
+			other => DescribeMachineError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other).context("Failed to query machine from database"),
+			)),
+		})?;
 
-	let machine = get_machine_info(&read, name).await;
+	let authorized_users: Vec<WakeOnLanMachineAuthorizedUser> =
+		wake_on_lan_machines_authorized_users::table
+			.filter(wake_on_lan_machines_authorized_users::machine_id.eq(machine.id))
+			.load(conn)
+			.await
+			.map_err(|e| {
+				DescribeMachineError::Unexpected(UnexpectedError(
+					anyhow::Error::new(e)
+						.context("Failed to query authorized users from database"),
+				))
+			})?;
 
-	func.async_call_once((machine, name)).await
+	let authorized_roles: Vec<WakeOnLanMachineAuthorizedRole> =
+		wake_on_lan_machines_authorized_roles::table
+			.filter(wake_on_lan_machines_authorized_roles::machine_id.eq(machine.id))
+			.load(conn)
+			.await
+			.map_err(|e| {
+				DescribeMachineError::Unexpected(UnexpectedError(
+					anyhow::Error::new(e)
+						.context("Failed to query authorized roles from database"),
+				))
+			})?;
+
+	Ok(MachineDescription {
+		machine,
+		authorized_users: authorized_users
+			.into_iter()
+			.map(|u| UserId::new(u.user_id as u64))
+			.collect(),
+		authorized_roles: authorized_roles
+			.into_iter()
+			.map(|r| RoleId::new(r.role_id as u64))
+			.collect(),
+	})
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::data::tests::mock_data;
 	use crate::db::tests::setup_test_db;
+	use crate::models::wake_on_lan::{
+		NewWakeOnLanMachineAuthorizedRole, NewWakeOnLanMachineAuthorizedUser,
+	};
 	use crate::services::wake_on_lan::MacAddress;
-	use serde_json::json;
 
 	async fn insert_test_machine<D: DbConnection>(
 		conn: &mut D,
@@ -291,51 +353,81 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn given_nonexistent_machine_then_describe_machine_callbacks_with_error() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_nonexistent_machine_then_describe_machine_returns_error() {
+		let mut conn = setup_test_db().await;
 
-		describe_machine(&data, "NonExistentMachine", async |result, name| {
-			assert_eq!(name, "NonExistentMachine");
-			assert_eq!(
-				result,
-				Err(MachineError::DoesNotExist {
-					machine_name: "NonExistentMachine".into(),
-				})
-			);
-		})
-		.await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+
+		let result = describe_machine(&mut conn, "NonExistentMachine").await;
+
+		assert_eq!(
+			result.unwrap_err(),
+			DescribeMachineError::Machine(MachineError::DoesNotExist {
+				machine_name: "NonExistentMachine".into(),
+			})
+		);
 	}
 
 	#[tokio::test]
-	async fn given_existing_machine_then_describe_machine_calls_function_with_machine_info() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_existing_machine_then_describe_machine_returns_machine_info() {
+		let mut conn = setup_test_db().await;
 
-		describe_machine(&data, "ExistingMachine", async |result, name| {
-			assert_eq!(name, "ExistingMachine");
-			match result {
-				Ok(machine) => assert_eq!(
-					machine.mac,
-					MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
-				),
-				Err(_) => assert!(false, "received error when it was not expected"),
-			}
-		})
-		.await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+
+		let result = describe_machine(&mut conn, "ExistingMachine").await.unwrap();
+
+		assert_eq!(result.machine.name, "ExistingMachine");
+		assert_eq!(
+			result.machine.mac,
+			MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+		);
+		assert!(result.authorized_users.is_empty());
+		assert!(result.authorized_roles.is_empty());
+	}
+
+	#[tokio::test]
+	async fn given_machine_with_authorized_users_and_roles_then_describe_machine_returns_them() {
+		let mut conn = setup_test_db().await;
+
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+
+		// Get the machine id
+		let machine: WakeOnLanMachine = wake_on_lan_machines::table
+			.filter(wake_on_lan_machines::name.eq("ExistingMachine"))
+			.first(&mut conn)
+			.await
+			.unwrap();
+
+		// Insert authorized users
+		diesel::insert_into(wake_on_lan_machines_authorized_users::table)
+			.values(&NewWakeOnLanMachineAuthorizedUser {
+				machine_id: machine.id,
+				user_id: 12345678901234567,
+			})
+			.execute(&mut conn)
+			.await
+			.unwrap();
+
+		// Insert authorized roles
+		diesel::insert_into(wake_on_lan_machines_authorized_roles::table)
+			.values(&NewWakeOnLanMachineAuthorizedRole {
+				machine_id: machine.id,
+				role_id: 98765432109876543,
+			})
+			.execute(&mut conn)
+			.await
+			.unwrap();
+
+		let result = describe_machine(&mut conn, "ExistingMachine").await.unwrap();
+
+		assert_eq!(result.machine.name, "ExistingMachine");
+		assert_eq!(
+			result.authorized_users,
+			vec![UserId::new(12345678901234567)]
+		);
+		assert_eq!(
+			result.authorized_roles,
+			vec![RoleId::new(98765432109876543)]
+		);
 	}
 }

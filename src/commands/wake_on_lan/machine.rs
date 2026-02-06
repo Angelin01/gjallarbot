@@ -61,10 +61,11 @@ pub async fn describe_machine<D: DbConnection>(
 	#[autocomplete = "autocomplete_machine_name"]
 	name: String,
 ) -> Result<(), BotError> {
-	let embed = ctrl_wol_mch::describe_machine(&ctx.data().data, &name, async |result, name| {
-		view_wol_mch::describe_machine_embed(result, &name)
-	})
-	.await;
+	let result = {
+		let mut conn = ctx.data().conn.lock().await;
+		ctrl_wol_mch::describe_machine(&mut conn, &name).await
+	};
+	let embed = view_wol_mch::describe_machine_embed(result, &name);
 
 	reply_no_mentions(ctx, embed).await?;
 

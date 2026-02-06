@@ -1,10 +1,12 @@
 use super::super::format_list;
-use crate::controllers::wake_on_lan::machine::{AddMachineError, ListMachinesError, RemoveMachineError};
-use crate::controllers::wake_on_lan::MachineError;
-use crate::data::wake_on_lan::WakeOnLanMachineInfo;
+use crate::controllers::wake_on_lan::machine::{
+	AddMachineError, DescribeMachineError, ListMachinesError, MachineDescription,
+	RemoveMachineError,
+};
 use crate::embeds;
 use crate::models::wake_on_lan::WakeOnLanMachine;
 use serenity::builder::CreateEmbed;
+use std::collections::BTreeSet;
 
 pub fn add_machine_embed(
 	result: Result<(), AddMachineError>,
@@ -77,13 +79,15 @@ pub fn list_machines_embed(result: Result<Vec<WakeOnLanMachine>, ListMachinesErr
 }
 
 pub fn describe_machine_embed(
-	result: Result<&WakeOnLanMachineInfo, MachineError>,
+	result: Result<MachineDescription, DescribeMachineError>,
 	machine_name: &str,
 ) -> CreateEmbed {
 	match result {
-		Ok(machine_info) => {
-			let users = format_list(&machine_info.authorized_users, |id| format!("<@{id}>"));
-			let roles = format_list(&machine_info.authorized_roles, |id| format!("<@&{id}>"));
+		Ok(desc) => {
+			let user_set: BTreeSet<_> = desc.authorized_users.into_iter().collect();
+			let role_set: BTreeSet<_> = desc.authorized_roles.into_iter().collect();
+			let users = format_list(&user_set, |id| format!("<@{id}>"));
+			let roles = format_list(&role_set, |id| format!("<@&{id}>"));
 
 			embeds::info(
 				format!("Machine {machine_name}"),
@@ -91,11 +95,16 @@ pub fn describe_machine_embed(
 					"- MAC Address: `{}`\n\
                      - Authorized Users: {}\n\
                      - Authorized Roles: {}",
-					machine_info.mac, users, roles
+					desc.machine.mac, users, roles
 				),
 			)
-		},
-		Err(_) => embeds::invalid_machine(machine_name),
+		}
+		Err(DescribeMachineError::Machine(_)) => embeds::invalid_machine(machine_name),
+		Err(DescribeMachineError::Unexpected(_)) => embeds::internal_error(
+			"Unexpected Error",
+			"Received an unexpected error while describing the machine, \
+				something is really wrong!",
+		),
 	}
 }
 
@@ -103,11 +112,9 @@ pub fn describe_machine_embed(
 mod tests {
 	use super::*;
 	use crate::controllers::wake_on_lan::MachineError;
-	use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 	use crate::errors::InvalidMacError;
 	use crate::services::wake_on_lan::MacAddress;
 	use serenity::all::{Colour, RoleId, UserId};
-	use std::collections::BTreeSet;
 
 	#[test]
 	fn given_add_machine_error_with_existing_machine_then_reply_with_error_existing_machine() {
@@ -259,9 +266,9 @@ mod tests {
 
 	#[test]
 	fn given_describe_machine_with_non_existing_machine_then_reply_with_non_existing_machine() {
-		let result = Err(MachineError::DoesNotExist {
+		let result = Err(DescribeMachineError::Machine(MachineError::DoesNotExist {
 			machine_name: "NonExistentMachine".to_string(),
-		});
+		}));
 
 		let embed = describe_machine_embed(result, "NonExistentMachine");
 
@@ -275,13 +282,20 @@ mod tests {
 
 	#[test]
 	fn given_successful_describe_machine_with_no_users_or_roles_then_reply_with_machine_info() {
-		let machine_info = WakeOnLanMachineInfo {
-			mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
-			authorized_users: Default::default(),
-			authorized_roles: Default::default(),
+		let now = chrono::Utc::now();
+		let desc = MachineDescription {
+			machine: WakeOnLanMachine {
+				id: 1,
+				name: "SomeMachine".to_string(),
+				mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+				created_at: now,
+				updated_at: now,
+			},
+			authorized_users: vec![],
+			authorized_roles: vec![],
 		};
 
-		let embed = describe_machine_embed(Ok(&machine_info), "SomeMachine");
+		let embed = describe_machine_embed(Ok(desc), "SomeMachine");
 
 		let expected_embed = embeds::info(
 			"Machine SomeMachine",
@@ -295,19 +309,26 @@ mod tests {
 
 	#[test]
 	fn given_successful_describe_machine_with_users_and_roles_then_reply_with_machine_info() {
-		let machine_info = WakeOnLanMachineInfo {
-			mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
-			authorized_users: BTreeSet::from([
+		let now = chrono::Utc::now();
+		let desc = MachineDescription {
+			machine: WakeOnLanMachine {
+				id: 1,
+				name: "SomeMachine".to_string(),
+				mac: MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+				created_at: now,
+				updated_at: now,
+			},
+			authorized_users: vec![
 				UserId::new(12345678901234567),
 				UserId::new(12345678901234568),
-			]),
-			authorized_roles: BTreeSet::from([
+			],
+			authorized_roles: vec![
 				RoleId::new(98765432109876543),
 				RoleId::new(98765432109876544),
-			]),
+			],
 		};
 
-		let embed = describe_machine_embed(Ok(&machine_info), "SomeMachine");
+		let embed = describe_machine_embed(Ok(desc), "SomeMachine");
 
 		let expected_embed = embeds::info(
 			"Machine SomeMachine",
