@@ -1,6 +1,5 @@
 use crate::commands;
 use crate::config::Config;
-use crate::data::{BotData, PersistentJson};
 use crate::db::DbConnection;
 use crate::services::servitor::HttpServitorController;
 use anyhow::Result;
@@ -10,10 +9,9 @@ use secrecy::ExposeSecret;
 use serenity::Client;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 pub struct BotState<D: DbConnection> {
-	pub data: BotData,
 	pub conn: Arc<Mutex<D>>,
 	pub servitor: Arc<BTreeMap<String, HttpServitorController>>,
 }
@@ -41,8 +39,6 @@ async fn build_framework<D: DbConnection + 'static>(config: &Config, conn: D) ->
 		.collect::<Result<BTreeMap<_, _>, _>>()?;
 
 	let servitor = Arc::new(servitor_controllers);
-	let data = Arc::new(RwLock::new(PersistentJson::new("data.json")?));
-
 	let conn = Arc::new(Mutex::new(conn));
 	Ok(Framework::builder()
 		.options(framework_options())
@@ -50,7 +46,6 @@ async fn build_framework<D: DbConnection + 'static>(config: &Config, conn: D) ->
 			Box::pin(async move {
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 				Ok(BotState {
-					data,
 					conn,
 					servitor,
 				})

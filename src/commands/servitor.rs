@@ -5,6 +5,11 @@ mod server;
 use crate::bot::{BotError, Context};
 use crate::commands::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
 use crate::db::DbConnection;
+use crate::schema::servitor_servers;
+use diesel::QueryDsl;
+use diesel::SelectableHelper;
+use diesel_async::RunQueryDsl;
+use crate::models::servitor::ServitorServer;
 
 #[poise::command(
 	slash_command,
@@ -30,15 +35,16 @@ pub async fn servitor<D: DbConnection>(_: Context<'_, D>) -> Result<(), BotError
 }
 
 async fn autocomplete_server_name<D: DbConnection>(ctx: Context<'_, D>, partial: &str) -> Vec<String> {
-	ctx.data()
-		.data
-		.read()
+	let mut conn = ctx.data().conn.lock().await;
+	servitor_servers::table
+		.select(ServitorServer::as_select())
+		.load(&mut *conn)
 		.await
-		.servitor
-		.keys()
+		.unwrap_or_default()
+		.into_iter()
+		.map(|s| s.name)
 		.filter(|name| name.starts_with(partial))
 		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
-		.cloned()
 		.collect()
 }
 

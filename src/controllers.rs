@@ -1,5 +1,4 @@
-use serenity::all::{Member, RoleId, User, UserId};
-use crate::data::authorization::AuthorizationInfo;
+use serenity::all::{RoleId, UserId};
 
 pub mod wake_on_lan;
 pub mod servitor;
@@ -9,18 +8,6 @@ pub enum DiscordEntity {
 	User(UserId),
 	Role(RoleId),
 }
-
-fn is_user_authorized<T: AuthorizationInfo>(
-	author: &User,
-	member: Option<&Member>,
-	info: &T,
-) -> bool {
-	info.authorized_users().contains(&author.id)
-		|| member.map_or(false, |m| {
-		m.roles.iter().any(|&role| info.authorized_roles().contains(&role))
-	})
-}
-
 
 #[cfg(test)]
 pub mod tests {

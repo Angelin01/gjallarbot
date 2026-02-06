@@ -8,12 +8,9 @@ use diesel_async::RunQueryDsl;
 use serde::{Deserialize, Serialize};
 use servitor::ServitorData;
 use std::path::PathBuf;
-use std::sync::Arc;
 use log::{debug, info, warn};
-use tokio::sync::RwLock;
 use wake_on_lan::WakeOnLanData;
 
-pub mod authorization;
 pub mod servitor;
 pub mod wake_on_lan;
 
@@ -27,7 +24,7 @@ use crate::schema::servitor_server_authorized_users::dsl::servitor_server_author
 use crate::schema::wake_on_lan_machines::dsl::wake_on_lan_machines;
 use crate::schema::wake_on_lan_machines_authorized_roles::dsl::wake_on_lan_machines_authorized_roles;
 use crate::schema::wake_on_lan_machines_authorized_users::dsl::wake_on_lan_machines_authorized_users;
-pub use persistent_data::*;
+use persistent_data::PersistentJson;
 
 #[derive(Deserialize, Serialize, Default)]
 pub struct Data {
@@ -39,8 +36,6 @@ pub struct Data {
 	pub migrated: bool,
 }
 fn mk_false() -> bool { false }
-
-pub type BotData = Arc<RwLock<PersistentJson<Data>>>;
 
 pub async fn migrate_old_data<C>(path: impl AsRef<str>, conn: &mut C) -> Result<()>
 where
@@ -177,23 +172,3 @@ where
 	Ok(())
 }
 
-#[cfg(test)]
-pub mod tests {
-	use super::*;
-	use serde_json::Value;
-	use std::io::Write;
-	use tempfile::NamedTempFile;
-	pub fn mock_data(initial_data: Option<Value>) -> BotData {
-		let mut temp_file = NamedTempFile::new().unwrap();
-		if let Some(data) = initial_data {
-			temp_file
-				.write_all(serde_json::to_string(&data).unwrap().as_bytes())
-				.unwrap();
-			temp_file.flush().unwrap();
-		}
-
-		let persistent_data = PersistentJson::new(temp_file.path()).unwrap();
-
-		Arc::new(RwLock::new(persistent_data))
-	}
-}
