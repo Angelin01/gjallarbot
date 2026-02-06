@@ -9,6 +9,7 @@ pub fn wake_embed(result: Result<(), WakeError>, machine_name: &str) -> CreateEm
 			WakeError::Machine(_) => embeds::invalid_machine(machine_name),
 			WakeError::Io { .. } => embeds::internal_error("Internal Error", format!("An unexpected error occurred while waking machine {machine_name}, please contact the bot's owner.")),
 			WakeError::Unauthorized { .. } => embeds::error("Unauthorized", format!("You are not authorized to wake machine {machine_name}")),
+			WakeError::Unexpected(_) => embeds::internal_error("Internal Error", format!("An unexpected error occurred while waking machine {machine_name}, please contact the bot's owner.")),
 		}
 	}
 }

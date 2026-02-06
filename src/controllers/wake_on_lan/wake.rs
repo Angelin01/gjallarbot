@@ -1,7 +1,11 @@
-use super::super::is_user_authorized;
-use super::{get_machine_info, MachineError};
-use crate::data::BotData;
+use super::MachineError;
+use crate::db::DbConnection;
+use crate::errors::UnexpectedError;
+use crate::models::wake_on_lan::{WakeOnLanMachine, WakeOnLanMachineAuthorizedRole, WakeOnLanMachineAuthorizedUser};
+use crate::schema::{wake_on_lan_machines, wake_on_lan_machines_authorized_roles, wake_on_lan_machines_authorized_users};
 use crate::services::wake_on_lan::{MagicPacket, MagicPacketSender};
+use diesel::{ExpressionMethods, QueryDsl};
+use diesel_async::RunQueryDsl;
 use serenity::all::{Member, User, UserId};
 use thiserror::Error;
 
@@ -15,28 +19,77 @@ pub enum WakeError {
 
 	#[error("User {user} is not authorized to wake up machine {machine_name}")]
 	Unauthorized { user: UserId, machine_name: String },
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
-pub async fn wake<S: MagicPacketSender>(
-	data: &BotData,
+pub async fn wake<D: DbConnection, S: MagicPacketSender>(
+	conn: &mut D,
 	author: &User,
 	member: Option<&Member>,
 	machine_name: &str,
 	sender: &S,
 ) -> Result<(), WakeError> {
-	let data_read = data.read().await;
+	let machine: WakeOnLanMachine = wake_on_lan_machines::table
+		.filter(wake_on_lan_machines::name.eq(machine_name))
+		.first(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::NotFound => MachineError::DoesNotExist {
+				machine_name: machine_name.into(),
+			}
+			.into(),
+			other => WakeError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other).context("Failed to query machine from database"),
+			)),
+		})?;
 
-	let machine_info = get_machine_info(&data_read, machine_name).await?;
+	let authorized_users: Vec<WakeOnLanMachineAuthorizedUser> =
+		wake_on_lan_machines_authorized_users::table
+			.filter(wake_on_lan_machines_authorized_users::machine_id.eq(machine.id))
+			.load(conn)
+			.await
+			.map_err(|e| {
+				WakeError::Unexpected(UnexpectedError(
+					anyhow::Error::new(e)
+						.context("Failed to query authorized users from database"),
+				))
+			})?;
 
-	if !is_user_authorized(author, member, machine_info) {
+	let authorized_roles: Vec<WakeOnLanMachineAuthorizedRole> =
+		wake_on_lan_machines_authorized_roles::table
+			.filter(wake_on_lan_machines_authorized_roles::machine_id.eq(machine.id))
+			.load(conn)
+			.await
+			.map_err(|e| {
+				WakeError::Unexpected(UnexpectedError(
+					anyhow::Error::new(e)
+						.context("Failed to query authorized roles from database"),
+				))
+			})?;
+
+	let user_authorized = authorized_users
+		.iter()
+		.any(|u| UserId::new(u.user_id as u64) == author.id);
+
+	let role_authorized = member.map_or(false, |m| {
+		m.roles.iter().any(|role| {
+			authorized_roles
+				.iter()
+				.any(|r| serenity::all::RoleId::new(r.role_id as u64) == *role)
+		})
+	});
+
+	if !user_authorized && !role_authorized {
 		return Err(WakeError::Unauthorized {
-			user: author.id.to_owned(),
+			user: author.id,
 			machine_name: machine_name.to_string(),
 		});
 	}
 
 	sender
-		.send(&MagicPacket::from_mac(&machine_info.mac))
+		.send(&MagicPacket::from_mac(&machine.mac))
 		.await
 		.map_err(|e| WakeError::Io { kind: e.kind() })
 }
@@ -45,9 +98,10 @@ pub async fn wake<S: MagicPacketSender>(
 mod tests {
 	use super::super::super::tests::{mock_author_dms, mock_author_guild};
 	use super::*;
-	use crate::data::tests::mock_data;
+	use crate::db::tests::setup_test_db;
+	use crate::models::wake_on_lan::{NewWakeOnLanMachine, NewWakeOnLanMachineAuthorizedRole, NewWakeOnLanMachineAuthorizedUser};
+	use crate::schema::wake_on_lan_machines;
 	use crate::services::wake_on_lan::MacAddress;
-	use serde_json::json;
 	use serenity::all::RoleId;
 	use std::cell::Cell;
 
@@ -78,21 +132,60 @@ mod tests {
 		}
 	}
 
+	async fn insert_test_machine<D: DbConnection>(conn: &mut D, name: &str, mac: &str) {
+		diesel::insert_into(wake_on_lan_machines::table)
+			.values(&NewWakeOnLanMachine {
+				name,
+				mac: &mac.parse::<MacAddress>().unwrap(),
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert test machine");
+	}
+
+	async fn get_machine_id<D: DbConnection>(conn: &mut D, name: &str) -> i32 {
+		wake_on_lan_machines::table
+			.filter(wake_on_lan_machines::name.eq(name))
+			.select(wake_on_lan_machines::id)
+			.first::<i32>(conn)
+			.await
+			.expect("Failed to get machine id")
+	}
+
+	async fn permit_test_user<D: DbConnection>(conn: &mut D, machine_name: &str, user_id: u64) {
+		let machine_id = get_machine_id(conn, machine_name).await;
+		diesel::insert_into(wake_on_lan_machines_authorized_users::table)
+			.values(&NewWakeOnLanMachineAuthorizedUser {
+				machine_id,
+				user_id: user_id as i64,
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert authorized user");
+	}
+
+	async fn permit_test_role<D: DbConnection>(conn: &mut D, machine_name: &str, role_id: u64) {
+		let machine_id = get_machine_id(conn, machine_name).await;
+		diesel::insert_into(wake_on_lan_machines_authorized_roles::table)
+			.values(&NewWakeOnLanMachineAuthorizedRole {
+				machine_id,
+				role_id: role_id as i64,
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert authorized role");
+	}
+
 	#[tokio::test]
 	async fn given_nonexistent_machine_then_wake_returns_error() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6]
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
 		let sender = MockMagicPacketSender::default();
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
 		let result = wake(
-			&data,
+			&mut conn,
 			&author,
 			member.as_ref(),
 			"NonexistentMachine",
@@ -112,20 +205,18 @@ mod tests {
 	#[tokio::test]
 	async fn given_dm_call_and_existing_machine_but_user_not_in_allowed_list_then_wake_returns_error(
 	) {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [98765432109876543i64, 98765432109876542i64],
-					"authorized_roles": [98765432109876541i64, 98765432109876540i64]
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+		permit_test_user(&mut conn, "ExistingMachine", 98765432109876543).await;
+		permit_test_user(&mut conn, "ExistingMachine", 98765432109876542).await;
+		permit_test_role(&mut conn, "ExistingMachine", 98765432109876541).await;
+		permit_test_role(&mut conn, "ExistingMachine", 98765432109876540).await;
+
 		let sender = MockMagicPacketSender::default();
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
 		let result = wake(
-			&data,
+			&mut conn,
 			&author,
 			member.as_ref(),
 			"ExistingMachine",
@@ -146,15 +237,13 @@ mod tests {
 	#[tokio::test]
 	async fn given_guild_call_and_existing_machine_but_user_not_in_allowed_list_then_wake_returns_error(
 	) {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [98765432109876543i64, 98765432109876542i64],
-					"authorized_roles": [98765432109876541i64, 98765432109876540i64]
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+		permit_test_user(&mut conn, "ExistingMachine", 98765432109876543).await;
+		permit_test_user(&mut conn, "ExistingMachine", 98765432109876542).await;
+		permit_test_role(&mut conn, "ExistingMachine", 98765432109876541).await;
+		permit_test_role(&mut conn, "ExistingMachine", 98765432109876540).await;
+
 		let sender = MockMagicPacketSender::default();
 		let (author, member) = mock_author_guild(
 			UserId::new(12345678901234567),
@@ -162,7 +251,7 @@ mod tests {
 		);
 
 		let result = wake(
-			&data,
+			&mut conn,
 			&author,
 			member.as_ref(),
 			"ExistingMachine",
@@ -183,19 +272,15 @@ mod tests {
 	#[tokio::test]
 	async fn given_dm_call_and_existing_machine_and_user_in_allowed_list_then_should_wake_machine()
 	{
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [12345678901234567i64]
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+		permit_test_user(&mut conn, "ExistingMachine", 12345678901234567).await;
+
 		let sender = MockMagicPacketSender::default();
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
 		let result = wake(
-			&data,
+			&mut conn,
 			&author,
 			member.as_ref(),
 			"ExistingMachine",
@@ -213,15 +298,10 @@ mod tests {
 	#[tokio::test]
 	async fn given_guild_call_and_existing_machine_and_user_in_allowed_list_then_should_wake_machine(
 	) {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [12345678901234567i64],
-					"authorized_roles": []
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+		permit_test_user(&mut conn, "ExistingMachine", 12345678901234567).await;
+
 		let sender = MockMagicPacketSender::default();
 		let (author, member) = mock_author_guild(
 			UserId::new(12345678901234567),
@@ -229,7 +309,7 @@ mod tests {
 		);
 
 		let result = wake(
-			&data,
+			&mut conn,
 			&author,
 			member.as_ref(),
 			"ExistingMachine",
@@ -247,15 +327,10 @@ mod tests {
 	#[tokio::test]
 	async fn given_guild_call_and_existing_machine_and_user_in_allowed_roles_then_should_wake_machine(
 	) {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": [98765432109876543i64]
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
+		permit_test_role(&mut conn, "ExistingMachine", 98765432109876543).await;
+
 		let sender = MockMagicPacketSender::default();
 		let (author, member) = mock_author_guild(
 			UserId::new(12345678901234567),
@@ -263,7 +338,7 @@ mod tests {
 		);
 
 		let result = wake(
-			&data,
+			&mut conn,
 			&author,
 			member.as_ref(),
 			"ExistingMachine",

@@ -14,8 +14,10 @@ pub async fn wake<D: DbConnection>(
 ) -> Result<(), BotError> {
 	const SENDER: UdpMagicPacketSender = UdpMagicPacketSender {};
 
+	let mut conn = ctx.data().conn.lock().await;
+
 	let result = controllers::wake_on_lan::wake::wake(
-		&ctx.data().data,
+		&mut *conn,
 		ctx.author(),
 		ctx.author_member().await.as_deref(),
 		&name,
