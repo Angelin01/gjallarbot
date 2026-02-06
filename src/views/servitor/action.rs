@@ -74,6 +74,10 @@ fn servitor_error_embed(error: ExecuteServitorActionError, server_name: &str) ->
 			"Unauthorized",
 			format!("You are not authorized to operate the Servitor server {server_name}")
 		),
+		ExecuteServitorActionError::Unexpected(_) => embeds::internal_error(
+			"Unexpected Error",
+			"An unexpected error occurred while processing the request"
+		),
 		ExecuteServitorActionError::Servitor(se) => match se {
 			ServitorError::BadRequest => embeds::internal_error(
 				"Bad Request",

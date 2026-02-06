@@ -35,7 +35,7 @@ pub async fn run_migrations<D: DbConnection + 'static>(conn: D) -> Result<()> {
 pub mod tests {
 	use super::*;
 
-	pub async fn setup_test_db() -> impl DbConnection {
+	pub async fn setup_test_db() -> SyncConnectionWrapper<SqliteConnection> {
 		let conn = SyncConnectionWrapper::<SqliteConnection>::establish(":memory:")
 			.await
 			.expect("Failed to create in-memory database");
