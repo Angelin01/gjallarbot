@@ -14,7 +14,8 @@ pub async fn add_user<D: DbConnection>(
 	server: String,
 	#[description = "User that be allowed operate this server"] user: User,
 ) -> Result<(), BotError> {
-	let result = ctrl_serv_auth::permit_user(&ctx.data().data, &server, user.id).await;
+	let mut conn = ctx.data().conn.lock().await;
+	let result = ctrl_serv_auth::permit_user(&mut *conn, &server, user.id).await;
 	let embed = view_serv_auth::permit_user_embed(result, &server, user.id);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -30,7 +31,8 @@ pub async fn remove_user<D: DbConnection>(
 	server: String,
 	#[description = "User that will no longer be allowed operate this server"] user: User,
 ) -> Result<(), BotError> {
-	let result = ctrl_serv_auth::revoke_user(&ctx.data().data, &server, user.id).await;
+	let mut conn = ctx.data().conn.lock().await;
+	let result = ctrl_serv_auth::revoke_user(&mut *conn, &server, user.id).await;
 	let embed = view_serv_auth::revoke_user_embed(result, &server, user.id);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -46,7 +48,8 @@ pub async fn add_role<D: DbConnection>(
 	server: String,
 	#[description = "Role that be allowed operate this server"] role: Role,
 ) -> Result<(), BotError> {
-	let result = ctrl_serv_auth::permit_role(&ctx.data().data, &server, role.id).await;
+	let mut conn = ctx.data().conn.lock().await;
+	let result = ctrl_serv_auth::permit_role(&mut *conn, &server, role.id).await;
 	let embed = view_serv_auth::permit_role_embed(result, &server, role.id);
 
 	reply_no_mentions(ctx, embed).await?;
@@ -62,7 +65,8 @@ pub async fn remove_role<D: DbConnection>(
 	server: String,
 	#[description = "Role that will no longer be allowed operate this server"] role: Role,
 ) -> Result<(), BotError> {
-	let result = ctrl_serv_auth::revoke_role(&ctx.data().data, &server, role.id).await;
+	let mut conn = ctx.data().conn.lock().await;
+	let result = ctrl_serv_auth::revoke_role(&mut *conn, &server, role.id).await;
 	let embed = view_serv_auth::revoke_role_embed(result, &server, role.id);
 
 	reply_no_mentions(ctx, embed).await?;

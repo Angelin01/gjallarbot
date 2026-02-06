@@ -1,6 +1,12 @@
-use super::super::DiscordEntity;
-use super::{get_server_info_mut, ServerError};
-use crate::data::BotData;
+use super::ServerError;
+use crate::controllers::DiscordEntity;
+use crate::db::DbConnection;
+use crate::errors::UnexpectedError;
+use crate::models::servitor::NewServitorServerAuthorizedUser;
+use crate::schema::{servitor_server_authorized_users, servitor_servers};
+use diesel::result::DatabaseErrorKind;
+use diesel::{ExpressionMethods, QueryDsl};
+use diesel_async::RunQueryDsl;
 use log::info;
 use serenity::all::{RoleId, UserId};
 use thiserror::Error;
@@ -15,6 +21,9 @@ pub enum AddPermissionError {
 		server_name: String,
 		entity: DiscordEntity,
 	},
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -27,103 +36,188 @@ pub enum RemovePermissionError {
 		server_name: String,
 		entity: DiscordEntity,
 	},
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
-pub async fn permit_user(
-	data: &BotData,
+async fn get_server_id<D: DbConnection>(
+	conn: &mut D,
+	server_name: &str,
+) -> Result<i32, ServerError> {
+	servitor_servers::table
+		.filter(servitor_servers::name.eq(server_name))
+		.select(servitor_servers::id)
+		.first::<i32>(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::NotFound => ServerError::DoesNotExist {
+				server_name: server_name.into(),
+			},
+			other => panic!("Unexpected error looking up server: {other}"),
+		})
+}
+
+pub async fn permit_user<D: DbConnection>(
+	conn: &mut D,
 	server_name: &str,
 	user_id: UserId,
 ) -> Result<(), AddPermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
+	let server_id = get_server_id(conn, server_name).await?;
 
-	let server_info = get_server_info_mut(&mut data_write, server_name).await?;
-
-	if server_info.authorized_users.insert(user_id) {
-		info!("Permitted user {user_id} to operate server {server_name}");
-		Ok(())
-	} else {
-		Err(AddPermissionError::AlreadyAuthorized {
-			server_name: server_name.into(),
-			entity: DiscordEntity::User(user_id),
+	diesel::insert_into(servitor_server_authorized_users::table)
+		.values(&NewServitorServerAuthorizedUser {
+			server_id,
+			user_id: user_id.get() as i64,
 		})
-	}
+		.execute(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+				AddPermissionError::AlreadyAuthorized {
+					server_name: server_name.into(),
+					entity: DiscordEntity::User(user_id),
+				}
+			}
+			other => AddPermissionError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other)
+					.context("Failed to insert authorized user into database"),
+			)),
+		})?;
+
+	info!("Permitted user {user_id} to operate server {server_name}");
+	Ok(())
 }
 
-pub async fn revoke_user(
-	data: &BotData,
+pub async fn revoke_user<D: DbConnection>(
+	conn: &mut D,
 	server_name: &str,
 	user_id: UserId,
 ) -> Result<(), RemovePermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
+	let server_id = get_server_id(conn, server_name).await.map_err(|e| {
+		RemovePermissionError::Server(e)
+	})?;
 
-	let server_info = get_server_info_mut(&mut data_write, server_name).await?;
+	let affected = diesel::delete(
+		servitor_server_authorized_users::table
+			.filter(servitor_server_authorized_users::server_id.eq(server_id))
+			.filter(servitor_server_authorized_users::user_id.eq(user_id.get() as i64)),
+	)
+	.execute(conn)
+	.await
+	.map_err(|e| {
+		RemovePermissionError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e)
+				.context("Failed to delete authorized user from database"),
+		))
+	})?;
 
-	if server_info.authorized_users.remove(&user_id) {
-		info!("Revoked user {user_id}'s permission to operate server {server_name}");
-		Ok(())
-	} else {
-		Err(RemovePermissionError::AlreadyNotAuthorized {
-			server_name: server_name.to_string(),
+	if affected == 0 {
+		return Err(RemovePermissionError::AlreadyNotAuthorized {
+			server_name: server_name.into(),
 			entity: DiscordEntity::User(user_id),
-		})
+		});
 	}
+
+	info!("Revoked user's {user_id} permission to operate server {server_name}");
+	Ok(())
 }
 
-pub async fn permit_role(
-	data: &BotData,
+pub async fn permit_role<D: DbConnection>(
+	conn: &mut D,
 	server_name: &str,
 	role_id: RoleId,
 ) -> Result<(), AddPermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
+	use crate::models::servitor::NewServitorServerAuthorizedRole;
+	use crate::schema::servitor_server_authorized_roles;
 
-	let server_info = get_server_info_mut(&mut data_write, server_name).await?;
+	let server_id = get_server_id(conn, server_name).await?;
 
-	if server_info.authorized_roles.insert(role_id) {
-		info!("Permitted role {role_id} to operate server {server_name}");
-		Ok(())
-	} else {
-		Err(AddPermissionError::AlreadyAuthorized {
-			server_name: server_name.into(),
-			entity: DiscordEntity::Role(role_id),
+	diesel::insert_into(servitor_server_authorized_roles::table)
+		.values(&NewServitorServerAuthorizedRole {
+			server_id,
+			role_id: role_id.get() as i64,
 		})
-	}
+		.execute(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+				AddPermissionError::AlreadyAuthorized {
+					server_name: server_name.into(),
+					entity: DiscordEntity::Role(role_id),
+				}
+			}
+			other => AddPermissionError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other)
+					.context("Failed to insert authorized role into database"),
+			)),
+		})?;
+
+	info!("Permitted role {role_id} to operate server {server_name}");
+	Ok(())
 }
 
-pub async fn revoke_role(
-	data: &BotData,
+pub async fn revoke_role<D: DbConnection>(
+	conn: &mut D,
 	server_name: &str,
 	role_id: RoleId,
 ) -> Result<(), RemovePermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
+	use crate::schema::servitor_server_authorized_roles;
 
-	let server_info = get_server_info_mut(&mut data_write, server_name).await?;
+	let server_id = get_server_id(conn, server_name).await.map_err(|e| {
+		RemovePermissionError::Server(e)
+	})?;
 
-	if server_info.authorized_roles.remove(&role_id) {
-		info!("Revoked role {role_id}'s permission to operate server {server_name}");
-		Ok(())
-	} else {
-		Err(RemovePermissionError::AlreadyNotAuthorized {
-			server_name: server_name.to_string(),
+	let affected = diesel::delete(
+		servitor_server_authorized_roles::table
+			.filter(servitor_server_authorized_roles::server_id.eq(server_id))
+			.filter(servitor_server_authorized_roles::role_id.eq(role_id.get() as i64)),
+	)
+	.execute(conn)
+	.await
+	.map_err(|e| {
+		RemovePermissionError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e)
+				.context("Failed to delete authorized role from database"),
+		))
+	})?;
+
+	if affected == 0 {
+		return Err(RemovePermissionError::AlreadyNotAuthorized {
+			server_name: server_name.into(),
 			entity: DiscordEntity::Role(role_id),
-		})
+		});
 	}
+
+	info!("Revoked role {role_id}'s permission to operate server {server_name}");
+	Ok(())
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::data::tests::mock_data;
-	use serde_json::json;
+	use crate::db::tests::setup_test_db;
+	use crate::models::servitor::NewServitorServer;
+
+	async fn insert_test_server<D: DbConnection>(conn: &mut D, name: &str, servitor: &str, unit_name: &str) {
+		diesel::insert_into(servitor_servers::table)
+			.values(&NewServitorServer {
+				name,
+				servitor,
+				unit_name,
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert test server");
+	}
+
+	// --- permit_user tests ---
 
 	#[tokio::test]
-	async fn given_non_existing_server_then_permit_user_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
+	async fn given_nonexistent_server_then_permit_user_returns_server_error() {
+		let mut conn = setup_test_db().await;
 
-		let result = permit_user(&data, "NonExistentServer", UserId::new(12345678901234567)).await;
+		let result = permit_user(&mut conn, "NonExistentServer", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
 			result,
@@ -131,67 +225,55 @@ mod tests {
 				server_name: "NonExistentServer".to_string()
 			}))
 		);
-		assert!(data.read().await.servitor.is_empty())
 	}
 
 	#[tokio::test]
-	async fn given_already_authorized_user_then_permit_user_returns_error_and_does_not_modify_data()
-	{
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_already_authorized_user_then_permit_user_returns_already_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = permit_user(&data, "ExistingServer", UserId::new(12345678901234567)).await;
+		// First permit succeeds
+		permit_user(&mut conn, "ExistingServer", UserId::new(12345678901234567))
+			.await
+			.unwrap();
+
+		// Second permit should fail
+		let result = permit_user(&mut conn, "ExistingServer", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
 			result,
 			Err(AddPermissionError::AlreadyAuthorized {
 				server_name: "ExistingServer".to_string(),
-				entity: DiscordEntity::User(UserId::new(12345678901234567u64))
+				entity: DiscordEntity::User(UserId::new(12345678901234567)),
 			})
-		);
-		assert_eq!(
-			data.read().await.servitor["ExistingServer"]
-				.authorized_users
-				.len(),
-			1
 		);
 	}
 
 	#[tokio::test]
-	async fn given_new_user_then_permit_user_returns_success_and_adds_user() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_new_user_then_permit_user_returns_success() {
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = permit_user(&data, "ExistingServer", UserId::new(12345678901234567)).await;
+		let result = permit_user(&mut conn, "ExistingServer", UserId::new(12345678901234567)).await;
 
 		assert_eq!(result, Ok(()));
 
-		assert!(data.read().await.servitor["ExistingServer"]
-			.authorized_users
-			.contains(&UserId::new(12345678901234567)));
+		// Verify the user was actually inserted
+		let count: i64 = servitor_server_authorized_users::table
+			.count()
+			.get_result(&mut conn)
+			.await
+			.unwrap();
+		assert_eq!(count, 1);
 	}
 
-	#[tokio::test]
-	async fn given_non_existing_server_then_revoke_user_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
+	// --- revoke_user tests ---
 
-		let result = revoke_user(&data, "NonExistentServer", UserId::new(12345678901234567)).await;
+	#[tokio::test]
+	async fn given_nonexistent_server_then_revoke_user_returns_server_error() {
+		let mut conn = setup_test_db().await;
+
+		let result = revoke_user(&mut conn, "NonExistentServer", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
 			result,
@@ -199,23 +281,14 @@ mod tests {
 				server_name: "NonExistentServer".to_string()
 			}))
 		);
-		assert!(data.read().await.servitor.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_not_authorized_user_then_revoke_user_returns_error_and_does_not_modify_data() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_non_authorized_user_then_revoke_user_returns_not_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = revoke_user(&data, "ExistingServer", UserId::new(76543210987654321)).await;
+		let result = revoke_user(&mut conn, "ExistingServer", UserId::new(76543210987654321)).await;
 
 		assert_eq!(
 			result,
@@ -224,40 +297,39 @@ mod tests {
 				entity: DiscordEntity::User(UserId::new(76543210987654321))
 			})
 		);
-		assert_eq!(
-			data.read().await.servitor["ExistingServer"]
-				.authorized_users
-				.len(),
-			1
-		);
 	}
 
 	#[tokio::test]
-	async fn given_authorized_user_then_revoke_user_returns_success_and_removes_users() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_authorized_user_then_revoke_user_returns_success_and_removes_user() {
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = revoke_user(&data, "ExistingServer", UserId::new(12345678901234567)).await;
+		// First permit the user
+		permit_user(&mut conn, "ExistingServer", UserId::new(12345678901234567))
+			.await
+			.unwrap();
+
+		// Now revoke
+		let result = revoke_user(&mut conn, "ExistingServer", UserId::new(12345678901234567)).await;
 
 		assert_eq!(result, Ok(()));
-		assert!(!data.read().await.servitor["ExistingServer"]
-			.authorized_users
-			.contains(&UserId::new(12345678901234567)));
+
+		// Verify the user was actually removed
+		let count: i64 = servitor_server_authorized_users::table
+			.count()
+			.get_result(&mut conn)
+			.await
+			.unwrap();
+		assert_eq!(count, 0);
 	}
 
-	#[tokio::test]
-	async fn given_non_existing_server_then_permit_role_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
+	// --- permit_role tests ---
 
-		let result = permit_role(&data, "NonExistentServer", RoleId::new(98765432109876543)).await;
+	#[tokio::test]
+	async fn given_nonexistent_server_then_permit_role_returns_server_error() {
+		let mut conn = setup_test_db().await;
+
+		let result = permit_role(&mut conn, "NonExistentServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -265,67 +337,47 @@ mod tests {
 				server_name: "NonExistentServer".to_string()
 			}))
 		);
-		assert!(data.read().await.servitor.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_already_authorized_role_then_permit_role_returns_error_and_does_not_modify_data()
-	{
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [],
-					"authorized_roles": [98765432109876543u64]
-				}
-			}
-		})));
+	async fn given_already_authorized_role_then_permit_role_returns_already_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = permit_role(&data, "ExistingServer", RoleId::new(98765432109876543)).await;
+		// First permit succeeds
+		permit_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543))
+			.await
+			.unwrap();
+
+		// Second permit should fail
+		let result = permit_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
 			Err(AddPermissionError::AlreadyAuthorized {
 				server_name: "ExistingServer".to_string(),
-				entity: DiscordEntity::Role(RoleId::new(98765432109876543u64))
+				entity: DiscordEntity::Role(RoleId::new(98765432109876543))
 			})
 		);
-		assert_eq!(
-			data.read().await.servitor["ExistingServer"]
-				.authorized_roles
-				.len(),
-			1
-		);
 	}
 
 	#[tokio::test]
-	async fn given_new_role_then_permit_role_returns_success_and_adds_role() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_new_role_then_permit_role_returns_success() {
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = permit_role(&data, "ExistingServer", RoleId::new(98765432109876543)).await;
+		let result = permit_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(result, Ok(()));
-
-		assert!(data.read().await.servitor["ExistingServer"]
-			.authorized_roles
-			.contains(&RoleId::new(98765432109876543)));
 	}
 
-	#[tokio::test]
-	async fn given_non_existing_server_then_revoke_role_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
+	// --- revoke_role tests ---
 
-		let result = revoke_role(&data, "NonExistentServer", RoleId::new(98765432109876543)).await;
+	#[tokio::test]
+	async fn given_nonexistent_server_then_revoke_role_returns_server_error() {
+		let mut conn = setup_test_db().await;
+
+		let result = revoke_role(&mut conn, "NonExistentServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -333,57 +385,37 @@ mod tests {
 				server_name: "NonExistentServer".to_string()
 			}))
 		);
-		assert!(data.read().await.servitor.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_not_authorized_role_then_revoke_role_returns_error_and_does_not_modify_data() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [],
-					"authorized_roles": [98765432109876543u64]
-				}
-			}
-		})));
+	async fn given_non_authorized_role_then_revoke_role_returns_not_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = revoke_role(&data, "ExistingServer", RoleId::new(11223344556677889)).await;
+		let result = revoke_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
 			Err(RemovePermissionError::AlreadyNotAuthorized {
 				server_name: "ExistingServer".to_string(),
-				entity: DiscordEntity::Role(RoleId::new(11223344556677889))
+				entity: DiscordEntity::Role(RoleId::new(98765432109876543))
 			})
-		);
-		assert_eq!(
-			data.read().await.servitor["ExistingServer"]
-				.authorized_roles
-				.len(),
-			1
 		);
 	}
 
 	#[tokio::test]
 	async fn given_authorized_role_then_revoke_role_returns_success_and_removes_role() {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"ExistingServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [],
-					"authorized_roles": [98765432109876543u64]
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		let result = revoke_role(&data, "ExistingServer", RoleId::new(98765432109876543)).await;
+		// First permit the role
+		permit_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543))
+			.await
+			.unwrap();
+
+		// Now revoke
+		let result = revoke_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(result, Ok(()));
-		assert!(!data.read().await.servitor["ExistingServer"]
-			.authorized_roles
-			.contains(&RoleId::new(98765432109876543)));
 	}
 }

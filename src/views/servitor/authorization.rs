@@ -21,6 +21,11 @@ pub fn permit_user_embed(
 				"User already permitted",
 				format!("User <@{user_id}> is already permitted to operate Servitor server {server_name}"),
 			),
+			AddPermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while permitting the user, \
+					something is really wrong!",
+			),
 		},
 	}
 }
@@ -44,6 +49,11 @@ pub fn revoke_user_embed(
 				format!(
 					"User <@{user_id}> is already not permitted to operate Servitor server {server_name}"
 				),
+			),
+			RemovePermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while revoking the user, \
+					something is really wrong!",
 			),
 		},
 	}
@@ -70,6 +80,11 @@ pub fn permit_role_embed(
 					"Role <@&{role_id}> is already permitted to operate Servitor server {server_name}"
 				),
 			),
+			AddPermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while permitting the role, \
+					something is really wrong!",
+			),
 		},
 	}
 }
@@ -94,6 +109,11 @@ pub fn revoke_role_embed(
 				format!(
 					"Role <@&{role_id}> is already not permitted to operate Servitor server {server_name}"
 				),
+			),
+			RemovePermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while revoking the role, \
+					something is really wrong!",
 			),
 		},
 	}
