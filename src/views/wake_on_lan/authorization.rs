@@ -20,6 +20,11 @@ pub fn permit_user_embed(
 				"User already permitted",
 				format!("User <@{user_id}> is already permitted to wake machine {machine_name}"),
 			),
+			AddPermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while permitting the user, \
+					something is really wrong!",
+			),
 		},
 	}
 }
@@ -44,6 +49,11 @@ pub fn revoke_user_embed(
 					"User <@{user_id}> is already not permitted to wake machine {machine_name}"
 				),
 			),
+			RemovePermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while revoking the user's permission, \
+					something is really wrong!",
+			),
 		},
 	}
 }
@@ -65,6 +75,11 @@ pub fn permit_role_embed(
 			AddPermissionError::AlreadyAuthorized { .. } => embeds::error(
 				"Role already permitted",
 				format!("Role <@&{role_id}> is already permitted to wake machine {machine_name}"),
+			),
+			AddPermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while permitting the role, \
+					something is really wrong!",
 			),
 		},
 	}
@@ -89,6 +104,11 @@ pub fn revoke_role_embed(
 				format!(
 					"Role <@&{role_id}> is already not permitted to wake machine {machine_name}"
 				),
+			),
+			RemovePermissionError::Unexpected(_) => embeds::internal_error(
+				"Unexpected Error",
+				"Received an unexpected error while revoking the role's permission, \
+					something is really wrong!",
 			),
 		},
 	}

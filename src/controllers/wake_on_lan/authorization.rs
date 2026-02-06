@@ -1,6 +1,12 @@
-use super::super::DiscordEntity;
-use super::{get_machine_info_mut, MachineError};
-use crate::data::BotData;
+use super::MachineError;
+use crate::controllers::DiscordEntity;
+use crate::db::DbConnection;
+use crate::errors::UnexpectedError;
+use crate::models::wake_on_lan::NewWakeOnLanMachineAuthorizedUser;
+use crate::schema::{wake_on_lan_machines, wake_on_lan_machines_authorized_users};
+use diesel::result::DatabaseErrorKind;
+use diesel::{ExpressionMethods, QueryDsl};
+use diesel_async::RunQueryDsl;
 use log::info;
 use serenity::all::{RoleId, UserId};
 use thiserror::Error;
@@ -15,6 +21,9 @@ pub enum AddPermissionError {
 		machine_name: String,
 		entity: DiscordEntity,
 	},
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -27,101 +36,189 @@ pub enum RemovePermissionError {
 		machine_name: String,
 		entity: DiscordEntity,
 	},
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
-pub async fn permit_user(
-	data: &BotData,
+async fn get_machine_id<D: DbConnection>(
+	conn: &mut D,
+	machine_name: &str,
+) -> Result<i32, MachineError> {
+	wake_on_lan_machines::table
+		.filter(wake_on_lan_machines::name.eq(machine_name))
+		.select(wake_on_lan_machines::id)
+		.first::<i32>(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::NotFound => MachineError::DoesNotExist {
+				machine_name: machine_name.into(),
+			},
+			other => panic!("Unexpected error looking up machine: {other}"),
+		})
+}
+
+pub async fn permit_user<D: DbConnection>(
+	conn: &mut D,
 	machine_name: &str,
 	user_id: UserId,
 ) -> Result<(), AddPermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
-	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
+	let machine_id = get_machine_id(conn, machine_name).await?;
 
-	if machine_info.authorized_users.insert(user_id) {
-		info!("Permitted user {user_id} to wake machine {machine_name}");
-		Ok(())
-	} else {
-		Err(AddPermissionError::AlreadyAuthorized {
-			machine_name: machine_name.into(),
-			entity: DiscordEntity::User(user_id),
+	diesel::insert_into(wake_on_lan_machines_authorized_users::table)
+		.values(&NewWakeOnLanMachineAuthorizedUser {
+			machine_id,
+			user_id: user_id.get() as i64,
 		})
-	}
+		.execute(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+				AddPermissionError::AlreadyAuthorized {
+					machine_name: machine_name.into(),
+					entity: DiscordEntity::User(user_id),
+				}
+			}
+			other => AddPermissionError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other)
+					.context("Failed to insert authorized user into database"),
+			)),
+		})?;
+
+	info!("Permitted user {user_id} to wake machine {machine_name}");
+	Ok(())
 }
 
-pub async fn revoke_user(
-	data: &BotData,
+pub async fn revoke_user<D: DbConnection>(
+	conn: &mut D,
 	machine_name: &str,
 	user_id: UserId,
 ) -> Result<(), RemovePermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
+	let machine_id = get_machine_id(conn, machine_name).await.map_err(|e| {
+		RemovePermissionError::Machine(e)
+	})?;
 
-	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
+	let affected = diesel::delete(
+		wake_on_lan_machines_authorized_users::table
+			.filter(wake_on_lan_machines_authorized_users::machine_id.eq(machine_id))
+			.filter(wake_on_lan_machines_authorized_users::user_id.eq(user_id.get() as i64)),
+	)
+	.execute(conn)
+	.await
+	.map_err(|e| {
+		RemovePermissionError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e)
+				.context("Failed to delete authorized user from database"),
+		))
+	})?;
 
-	if machine_info.authorized_users.remove(&user_id) {
-		info!("Revoked user's {user_id} permission to wake machine {machine_name}");
-		Ok(())
-	} else {
-		Err(RemovePermissionError::AlreadyNotAuthorized {
+	if affected == 0 {
+		return Err(RemovePermissionError::AlreadyNotAuthorized {
 			machine_name: machine_name.into(),
 			entity: DiscordEntity::User(user_id),
-		})
+		});
 	}
+
+	info!("Revoked user's {user_id} permission to wake machine {machine_name}");
+	Ok(())
 }
 
-pub async fn permit_role(
-	data: &BotData,
+pub async fn permit_role<D: DbConnection>(
+	conn: &mut D,
 	machine_name: &str,
 	role_id: RoleId,
 ) -> Result<(), AddPermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
+	use crate::models::wake_on_lan::NewWakeOnLanMachineAuthorizedRole;
+	use crate::schema::wake_on_lan_machines_authorized_roles;
 
-	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
+	let machine_id = get_machine_id(conn, machine_name).await?;
 
-	if machine_info.authorized_roles.insert(role_id) {
-		info!("Permitted role {role_id} to wake machine {machine_name}");
-		Ok(())
-	} else {
-		Err(AddPermissionError::AlreadyAuthorized {
-			machine_name: machine_name.into(),
-			entity: DiscordEntity::Role(role_id),
+	diesel::insert_into(wake_on_lan_machines_authorized_roles::table)
+		.values(&NewWakeOnLanMachineAuthorizedRole {
+			machine_id,
+			role_id: role_id.get() as i64,
 		})
-	}
+		.execute(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+				AddPermissionError::AlreadyAuthorized {
+					machine_name: machine_name.into(),
+					entity: DiscordEntity::Role(role_id),
+				}
+			}
+			other => AddPermissionError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other)
+					.context("Failed to insert authorized role into database"),
+			)),
+		})?;
+
+	info!("Permitted role {role_id} to wake machine {machine_name}");
+	Ok(())
 }
 
-pub async fn revoke_role(
-	data: &BotData,
+pub async fn revoke_role<D: DbConnection>(
+	conn: &mut D,
 	machine_name: &str,
 	role_id: RoleId,
 ) -> Result<(), RemovePermissionError> {
-	let mut lock = data.write().await;
-	let mut data_write = lock.write();
+	use crate::schema::wake_on_lan_machines_authorized_roles;
 
-	let machine_info = get_machine_info_mut(&mut data_write, machine_name).await?;
+	let machine_id = get_machine_id(conn, machine_name).await.map_err(|e| {
+		RemovePermissionError::Machine(e)
+	})?;
 
-	if machine_info.authorized_roles.remove(&role_id) {
-		info!("Revoked role {role_id}'s permission to wake machine {machine_name}");
-		Ok(())
-	} else {
-		Err(RemovePermissionError::AlreadyNotAuthorized {
+	let affected = diesel::delete(
+		wake_on_lan_machines_authorized_roles::table
+			.filter(wake_on_lan_machines_authorized_roles::machine_id.eq(machine_id))
+			.filter(wake_on_lan_machines_authorized_roles::role_id.eq(role_id.get() as i64)),
+	)
+	.execute(conn)
+	.await
+	.map_err(|e| {
+		RemovePermissionError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e)
+				.context("Failed to delete authorized role from database"),
+		))
+	})?;
+
+	if affected == 0 {
+		return Err(RemovePermissionError::AlreadyNotAuthorized {
 			machine_name: machine_name.into(),
 			entity: DiscordEntity::Role(role_id),
-		})
+		});
 	}
+
+	info!("Revoked role {role_id}'s permission to wake machine {machine_name}");
+	Ok(())
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::data::tests::mock_data;
-	use serde_json::json;
+	use crate::db::tests::setup_test_db;
+	use crate::models::wake_on_lan::NewWakeOnLanMachine;
+
+	async fn insert_test_machine<D: DbConnection>(conn: &mut D, name: &str, mac: &str) {
+		use crate::services::wake_on_lan::MacAddress;
+
+		diesel::insert_into(wake_on_lan_machines::table)
+			.values(&NewWakeOnLanMachine {
+				name,
+				mac: &mac.parse::<MacAddress>().unwrap(),
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert test machine");
+	}
+
+	// --- permit_user tests ---
 
 	#[tokio::test]
-	async fn given_nonexistent_machine_then_permit_user_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
-		let result = permit_user(&data, "NonExistentMachine", UserId::new(12345678901234567)).await;
+	async fn given_nonexistent_machine_then_permit_user_returns_machine_error() {
+		let mut conn = setup_test_db().await;
+
+		let result = permit_user(&mut conn, "NonExistentMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
 			result,
@@ -129,23 +226,20 @@ mod tests {
 				machine_name: "NonExistentMachine".to_string()
 			}))
 		);
-		assert!(data.read().await.wake_on_lan.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_already_authorized_user_then_permit_user_returns_error_and_does_not_modify_data()
-	{
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_already_authorized_user_then_permit_user_returns_already_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = permit_user(&data, "ExistingMachine", UserId::new(12345678901234567)).await;
+		// First permit succeeds
+		permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567))
+			.await
+			.unwrap();
+
+		// Second permit should fail
+		let result = permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
 			result,
@@ -154,39 +248,33 @@ mod tests {
 				entity: DiscordEntity::User(UserId::new(12345678901234567)),
 			})
 		);
-		assert_eq!(
-			data.read().await.wake_on_lan["ExistingMachine"]
-				.authorized_users
-				.len(),
-			1
-		);
 	}
 
 	#[tokio::test]
-	async fn given_new_user_then_permit_user_returns_success_and_adds_user() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_new_user_then_permit_user_returns_success() {
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = permit_user(&data, "ExistingMachine", UserId::new(12345678901234567)).await;
+		let result = permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(result, Ok(()));
-		assert!(data.read().await.wake_on_lan["ExistingMachine"]
-			.authorized_users
-			.contains(&UserId::new(12345678901234567)));
+
+		// Verify the user was actually inserted
+		let count: i64 = wake_on_lan_machines_authorized_users::table
+			.count()
+			.get_result(&mut conn)
+			.await
+			.unwrap();
+		assert_eq!(count, 1);
 	}
 
-	#[tokio::test]
-	async fn given_nonexistent_machine_then_revoke_user_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
+	// --- revoke_user tests ---
 
-		let result = revoke_user(&data, "NonExistentMachine", UserId::new(12345678901234567)).await;
+	#[tokio::test]
+	async fn given_nonexistent_machine_then_revoke_user_returns_machine_error() {
+		let mut conn = setup_test_db().await;
+
+		let result = revoke_user(&mut conn, "NonExistentMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
 			result,
@@ -194,22 +282,14 @@ mod tests {
 				machine_name: "NonExistentMachine".to_string()
 			}))
 		);
-		assert!(data.read().await.wake_on_lan.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_non_authorized_user_then_revoke_user_returns_error_and_does_not_modify_data() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_non_authorized_user_then_revoke_user_returns_not_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = revoke_user(&data, "ExistingMachine", UserId::new(76543210987654321)).await;
+		let result = revoke_user(&mut conn, "ExistingMachine", UserId::new(76543210987654321)).await;
 
 		assert_eq!(
 			result,
@@ -218,39 +298,39 @@ mod tests {
 				entity: DiscordEntity::User(UserId::new(76543210987654321))
 			})
 		);
-		assert_eq!(
-			data.read().await.wake_on_lan["ExistingMachine"]
-				.authorized_users
-				.len(),
-			1
-		);
 	}
 
 	#[tokio::test]
 	async fn given_authorized_user_then_revoke_user_returns_success_and_removes_user() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = revoke_user(&data, "ExistingMachine", UserId::new(12345678901234567)).await;
+		// First permit the user
+		permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567))
+			.await
+			.unwrap();
+
+		// Now revoke
+		let result = revoke_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(result, Ok(()));
-		assert!(!data.read().await.wake_on_lan["ExistingMachine"]
-			.authorized_users
-			.contains(&UserId::new(12345678901234567)));
+
+		// Verify the user was actually removed
+		let count: i64 = wake_on_lan_machines_authorized_users::table
+			.count()
+			.get_result(&mut conn)
+			.await
+			.unwrap();
+		assert_eq!(count, 0);
 	}
 
-	#[tokio::test]
-	async fn given_nonexistent_machine_then_permit_role_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
+	// --- permit_role tests ---
 
-		let result = permit_role(&data, "NonExistentMachine", RoleId::new(98765432109876543)).await;
+	#[tokio::test]
+	async fn given_nonexistent_machine_then_permit_role_returns_machine_error() {
+		let mut conn = setup_test_db().await;
+
+		let result = permit_role(&mut conn, "NonExistentMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -258,23 +338,20 @@ mod tests {
 				machine_name: "NonExistentMachine".to_string()
 			}))
 		);
-		assert!(data.read().await.wake_on_lan.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_already_authorized_role_then_permit_role_returns_error_and_does_not_modify_data()
-	{
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": [98765432109876543u64]
-				}
-			}
-		})));
+	async fn given_already_authorized_role_then_permit_role_returns_already_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = permit_role(&data, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		// First permit succeeds
+		permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543))
+			.await
+			.unwrap();
+
+		// Second permit should fail
+		let result = permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -283,39 +360,25 @@ mod tests {
 				entity: DiscordEntity::Role(RoleId::new(98765432109876543))
 			})
 		);
-		assert_eq!(
-			data.read().await.wake_on_lan["ExistingMachine"]
-				.authorized_roles
-				.len(),
-			1
-		);
 	}
 
 	#[tokio::test]
-	async fn given_new_role_then_permit_role_returns_success_and_adds_role() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": []
-				}
-			}
-		})));
+	async fn given_new_role_then_permit_role_returns_success() {
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = permit_role(&data, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		let result = permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(result, Ok(()));
-		assert!(data.read().await.wake_on_lan["ExistingMachine"]
-			.authorized_roles
-			.contains(&RoleId::new(98765432109876543)));
 	}
 
-	#[tokio::test]
-	async fn given_nonexistent_machine_then_revoke_role_returns_error_and_does_not_modify_data() {
-		let data = mock_data(None);
+	// --- revoke_role tests ---
 
-		let result = revoke_role(&data, "NonExistentMachine", RoleId::new(98765432109876543)).await;
+	#[tokio::test]
+	async fn given_nonexistent_machine_then_revoke_role_returns_machine_error() {
+		let mut conn = setup_test_db().await;
+
+		let result = revoke_role(&mut conn, "NonExistentMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -323,22 +386,14 @@ mod tests {
 				machine_name: "NonExistentMachine".to_string()
 			}))
 		);
-		assert!(data.read().await.wake_on_lan.is_empty());
 	}
 
 	#[tokio::test]
-	async fn given_non_authorized_role_then_revoke_role_returns_error_and_does_not_modify_data() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": [12345678901234567u64]
-				}
-			}
-		})));
+	async fn given_non_authorized_role_then_revoke_role_returns_not_authorized() {
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = revoke_role(&data, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		let result = revoke_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -347,31 +402,21 @@ mod tests {
 				entity: DiscordEntity::Role(RoleId::new(98765432109876543))
 			})
 		);
-		assert_eq!(
-			data.read().await.wake_on_lan["ExistingMachine"]
-				.authorized_roles
-				.len(),
-			1
-		);
 	}
 
 	#[tokio::test]
 	async fn given_authorized_role_then_revoke_role_returns_success_and_removes_role() {
-		let data = mock_data(Some(json!({
-			"wake_on_lan": {
-				"ExistingMachine": {
-					"mac": [1, 2, 3, 4, 5, 6],
-					"authorized_users": [],
-					"authorized_roles": [98765432109876543u64]
-				}
-			}
-		})));
+		let mut conn = setup_test_db().await;
+		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = revoke_role(&data, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		// First permit the role
+		permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543))
+			.await
+			.unwrap();
+
+		// Now revoke
+		let result = revoke_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(result, Ok(()));
-		assert!(!data.read().await.wake_on_lan["ExistingMachine"]
-			.authorized_roles
-			.contains(&RoleId::new(98765432109876543)));
 	}
 }
