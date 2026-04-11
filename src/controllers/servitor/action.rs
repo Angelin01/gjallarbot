@@ -170,41 +170,26 @@ where
 			)),
 		})?;
 
-	let authorized_users: Vec<ServitorServerAuthorizedUser> =
-		servitor_server_authorized_users::table
-			.filter(servitor_server_authorized_users::server_id.eq(server.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				ExecuteServitorActionError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized users from database"),
-				))
-			})?;
+	let mut authorized = servitor_server_authorized_users::table
+		.filter(servitor_server_authorized_users::server_id.eq(server.id))
+		.filter(servitor_server_authorized_users::user_id.eq(author.id.get() as i64))
+		.first::<ServitorServerAuthorizedUser>(conn)
+		.await
+		.is_ok();
 
-	let authorized_roles: Vec<ServitorServerAuthorizedRole> =
-		servitor_server_authorized_roles::table
-			.filter(servitor_server_authorized_roles::server_id.eq(server.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				ExecuteServitorActionError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
-				))
-			})?;
+	if !authorized {
+		if let Some(m) = member {
+			let role_ids: Vec<i64> = m.roles.iter().map(|r| r.get() as i64).collect();
+			authorized = servitor_server_authorized_roles::table
+				.filter(servitor_server_authorized_roles::server_id.eq(server.id))
+				.filter(servitor_server_authorized_roles::role_id.eq_any(role_ids))
+				.first::<ServitorServerAuthorizedRole>(conn)
+				.await
+				.is_ok();
+		}
+	}
 
-	let user_authorized = authorized_users
-		.iter()
-		.any(|u| UserId::new(u.user_id as u64) == author.id);
-
-	let role_authorized = member.is_some_and(|m| {
-		m.roles.iter().any(|role| {
-			authorized_roles
-				.iter()
-				.any(|r| serenity::all::RoleId::new(r.role_id as u64) == *role)
-		})
-	});
-
-	if !user_authorized && !role_authorized {
+	if !authorized {
 		return Err(ExecuteServitorActionError::Unauthorized {
 			user: author.id,
 			server_name: server_name.to_string(),
