@@ -80,8 +80,7 @@ pub async fn permit_user<D: DbConnection>(
 				}
 			}
 			other => AddPermissionError::Unexpected(UnexpectedError(
-				anyhow::Error::new(other)
-					.context("Failed to insert authorized user into database"),
+				anyhow::Error::new(other).context("Failed to insert authorized user into database"),
 			)),
 		})?;
 
@@ -94,9 +93,9 @@ pub async fn revoke_user<D: DbConnection>(
 	machine_name: &str,
 	user_id: UserId,
 ) -> Result<(), RemovePermissionError> {
-	let machine_id = get_machine_id(conn, machine_name).await.map_err(|e| {
-		RemovePermissionError::Machine(e)
-	})?;
+	let machine_id = get_machine_id(conn, machine_name)
+		.await
+		.map_err(|e| RemovePermissionError::Machine(e))?;
 
 	let affected = diesel::delete(
 		wake_on_lan_machines_authorized_users::table
@@ -107,8 +106,7 @@ pub async fn revoke_user<D: DbConnection>(
 	.await
 	.map_err(|e| {
 		RemovePermissionError::Unexpected(UnexpectedError(
-			anyhow::Error::new(e)
-				.context("Failed to delete authorized user from database"),
+			anyhow::Error::new(e).context("Failed to delete authorized user from database"),
 		))
 	})?;
 
@@ -148,8 +146,7 @@ pub async fn permit_role<D: DbConnection>(
 				}
 			}
 			other => AddPermissionError::Unexpected(UnexpectedError(
-				anyhow::Error::new(other)
-					.context("Failed to insert authorized role into database"),
+				anyhow::Error::new(other).context("Failed to insert authorized role into database"),
 			)),
 		})?;
 
@@ -164,9 +161,9 @@ pub async fn revoke_role<D: DbConnection>(
 ) -> Result<(), RemovePermissionError> {
 	use crate::schema::wake_on_lan_machines_authorized_roles;
 
-	let machine_id = get_machine_id(conn, machine_name).await.map_err(|e| {
-		RemovePermissionError::Machine(e)
-	})?;
+	let machine_id = get_machine_id(conn, machine_name)
+		.await
+		.map_err(|e| RemovePermissionError::Machine(e))?;
 
 	let affected = diesel::delete(
 		wake_on_lan_machines_authorized_roles::table
@@ -177,8 +174,7 @@ pub async fn revoke_role<D: DbConnection>(
 	.await
 	.map_err(|e| {
 		RemovePermissionError::Unexpected(UnexpectedError(
-			anyhow::Error::new(e)
-				.context("Failed to delete authorized role from database"),
+			anyhow::Error::new(e).context("Failed to delete authorized role from database"),
 		))
 	})?;
 
@@ -196,29 +192,19 @@ pub async fn revoke_role<D: DbConnection>(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::controllers::wake_on_lan::tests::insert_test_machine;
 	use crate::db::tests::setup_test_db;
-	use crate::models::wake_on_lan::NewWakeOnLanMachine;
-
-	async fn insert_test_machine<D: DbConnection>(conn: &mut D, name: &str, mac: &str) {
-		use crate::services::wake_on_lan::MacAddress;
-
-		diesel::insert_into(wake_on_lan_machines::table)
-			.values(&NewWakeOnLanMachine {
-				name,
-				mac: &mac.parse::<MacAddress>().unwrap(),
-			})
-			.execute(conn)
-			.await
-			.expect("Failed to insert test machine");
-	}
-
-	// --- permit_user tests ---
 
 	#[tokio::test]
 	async fn given_nonexistent_machine_then_permit_user_returns_machine_error() {
 		let mut conn = setup_test_db().await;
 
-		let result = permit_user(&mut conn, "NonExistentMachine", UserId::new(12345678901234567)).await;
+		let result = permit_user(
+			&mut conn,
+			"NonExistentMachine",
+			UserId::new(12345678901234567),
+		)
+		.await;
 
 		assert_eq!(
 			result,
@@ -233,13 +219,12 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		// First permit succeeds
 		permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567))
 			.await
 			.unwrap();
 
-		// Second permit should fail
-		let result = permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
+		let result =
+			permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
 			result,
@@ -255,11 +240,11 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
+		let result =
+			permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(result, Ok(()));
 
-		// Verify the user was actually inserted
 		let count: i64 = wake_on_lan_machines_authorized_users::table
 			.count()
 			.get_result(&mut conn)
@@ -268,13 +253,16 @@ mod tests {
 		assert_eq!(count, 1);
 	}
 
-	// --- revoke_user tests ---
-
 	#[tokio::test]
 	async fn given_nonexistent_machine_then_revoke_user_returns_machine_error() {
 		let mut conn = setup_test_db().await;
 
-		let result = revoke_user(&mut conn, "NonExistentMachine", UserId::new(12345678901234567)).await;
+		let result = revoke_user(
+			&mut conn,
+			"NonExistentMachine",
+			UserId::new(12345678901234567),
+		)
+		.await;
 
 		assert_eq!(
 			result,
@@ -289,7 +277,8 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = revoke_user(&mut conn, "ExistingMachine", UserId::new(76543210987654321)).await;
+		let result =
+			revoke_user(&mut conn, "ExistingMachine", UserId::new(76543210987654321)).await;
 
 		assert_eq!(
 			result,
@@ -305,17 +294,15 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		// First permit the user
 		permit_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567))
 			.await
 			.unwrap();
 
-		// Now revoke
-		let result = revoke_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
+		let result =
+			revoke_user(&mut conn, "ExistingMachine", UserId::new(12345678901234567)).await;
 
 		assert_eq!(result, Ok(()));
 
-		// Verify the user was actually removed
 		let count: i64 = wake_on_lan_machines_authorized_users::table
 			.count()
 			.get_result(&mut conn)
@@ -324,13 +311,16 @@ mod tests {
 		assert_eq!(count, 0);
 	}
 
-	// --- permit_role tests ---
-
 	#[tokio::test]
 	async fn given_nonexistent_machine_then_permit_role_returns_machine_error() {
 		let mut conn = setup_test_db().await;
 
-		let result = permit_role(&mut conn, "NonExistentMachine", RoleId::new(98765432109876543)).await;
+		let result = permit_role(
+			&mut conn,
+			"NonExistentMachine",
+			RoleId::new(98765432109876543),
+		)
+		.await;
 
 		assert_eq!(
 			result,
@@ -345,13 +335,12 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		// First permit succeeds
 		permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543))
 			.await
 			.unwrap();
 
-		// Second permit should fail
-		let result = permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		let result =
+			permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -367,18 +356,22 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		let result =
+			permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(result, Ok(()));
 	}
-
-	// --- revoke_role tests ---
 
 	#[tokio::test]
 	async fn given_nonexistent_machine_then_revoke_role_returns_machine_error() {
 		let mut conn = setup_test_db().await;
 
-		let result = revoke_role(&mut conn, "NonExistentMachine", RoleId::new(98765432109876543)).await;
+		let result = revoke_role(
+			&mut conn,
+			"NonExistentMachine",
+			RoleId::new(98765432109876543),
+		)
+		.await;
 
 		assert_eq!(
 			result,
@@ -393,7 +386,8 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = revoke_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		let result =
+			revoke_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
 			result,
@@ -409,13 +403,12 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		// First permit the role
 		permit_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543))
 			.await
 			.unwrap();
 
-		// Now revoke
-		let result = revoke_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
+		let result =
+			revoke_role(&mut conn, "ExistingMachine", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(result, Ok(()));
 	}

@@ -5,7 +5,9 @@ use crate::errors::UnexpectedError;
 use crate::models::servitor::{
 	NewServitorServer, ServitorServer, ServitorServerAuthorizedRole, ServitorServerAuthorizedUser,
 };
-use crate::schema::{servitor_server_authorized_roles, servitor_server_authorized_users, servitor_servers};
+use crate::schema::{
+	servitor_server_authorized_roles, servitor_server_authorized_users, servitor_servers,
+};
 use diesel::result::DatabaseErrorKind;
 use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
@@ -100,16 +102,14 @@ pub async fn remove_server<D: DbConnection>(
 	conn: &mut D,
 	name: &str,
 ) -> Result<(), RemoveServerError> {
-	let affected = diesel::delete(
-		servitor_servers::table.filter(servitor_servers::name.eq(name)),
-	)
-	.execute(conn)
-	.await
-	.map_err(|e| {
-		RemoveServerError::Unexpected(UnexpectedError(
-			anyhow::Error::new(e).context("Failed to delete server from database"),
-		))
-	})?;
+	let affected = diesel::delete(servitor_servers::table.filter(servitor_servers::name.eq(name)))
+		.execute(conn)
+		.await
+		.map_err(|e| {
+			RemoveServerError::Unexpected(UnexpectedError(
+				anyhow::Error::new(e).context("Failed to delete server from database"),
+			))
+		})?;
 
 	if affected == 0 {
 		return Err(ServerError::DoesNotExist {
@@ -126,14 +126,11 @@ pub async fn remove_server<D: DbConnection>(
 pub async fn list_servers<D: DbConnection>(
 	conn: &mut D,
 ) -> Result<Vec<ServitorServer>, ListServersError> {
-	servitor_servers::table
-		.load(conn)
-		.await
-		.map_err(|e| {
-			ListServersError::Unexpected(UnexpectedError(
-				anyhow::Error::new(e).context("Failed to load servers from database"),
-			))
-		})
+	servitor_servers::table.load(conn).await.map_err(|e| {
+		ListServersError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e).context("Failed to load servers from database"),
+		))
+	})
 }
 
 pub async fn describe_server<D: DbConnection>(
@@ -161,8 +158,7 @@ pub async fn describe_server<D: DbConnection>(
 			.await
 			.map_err(|e| {
 				DescribeServerError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized users from database"),
+					anyhow::Error::new(e).context("Failed to query authorized users from database"),
 				))
 			})?;
 
@@ -173,8 +169,7 @@ pub async fn describe_server<D: DbConnection>(
 			.await
 			.map_err(|e| {
 				DescribeServerError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized roles from database"),
+					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
 				))
 			})?;
 
@@ -194,27 +189,11 @@ pub async fn describe_server<D: DbConnection>(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::controllers::servitor::tests::insert_test_server;
 	use crate::db::tests::setup_test_db;
 	use crate::models::servitor::{
 		NewServitorServerAuthorizedRole, NewServitorServerAuthorizedUser,
 	};
-
-	async fn insert_test_server<D: DbConnection>(
-		conn: &mut D,
-		name: &str,
-		servitor: &str,
-		unit_name: &str,
-	) {
-		diesel::insert_into(servitor_servers::table)
-			.values(&NewServitorServer {
-				name,
-				servitor,
-				unit_name,
-			})
-			.execute(conn)
-			.await
-			.expect("Failed to insert test server");
-	}
 
 	async fn get_all_servers<D: DbConnection>(conn: &mut D) -> Vec<ServitorServer> {
 		servitor_servers::table
@@ -229,13 +208,18 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		let servitor_names = vec!["foo".to_string()];
 
-		let result =
-			add_server(&mut conn, &servitor_names, "test", "NonExistingServitor", "some_name")
-				.await;
+		let result = add_server(
+			&mut conn,
+			&servitor_names,
+			"test",
+			"NonExistingServitor",
+			"some_name",
+		)
+		.await;
 
 		assert_eq!(
 			result,
-			Err(AddServerError::InvalidServitor {
+			Err(InvalidServitor {
 				name: "NonExistingServitor".to_string()
 			})
 		);
@@ -249,8 +233,7 @@ mod tests {
 
 		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
 
-		let result =
-			add_server(&mut conn, &servitor_names, "SomeServer", "foo", "some_name").await;
+		let result = add_server(&mut conn, &servitor_names, "SomeServer", "foo", "some_name").await;
 
 		assert_eq!(
 			result,
@@ -269,8 +252,7 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		let servitor_names = vec!["foo".to_string()];
 
-		let result =
-			add_server(&mut conn, &servitor_names, "NewServer", "foo", "some_name").await;
+		let result = add_server(&mut conn, &servitor_names, "NewServer", "foo", "some_name").await;
 
 		assert_eq!(result, Ok(()));
 

@@ -195,23 +195,9 @@ pub async fn revoke_role<D: DbConnection>(
 
 #[cfg(test)]
 mod tests {
+	use crate::controllers::servitor::tests::insert_test_server;
 	use super::*;
 	use crate::db::tests::setup_test_db;
-	use crate::models::servitor::NewServitorServer;
-
-	async fn insert_test_server<D: DbConnection>(conn: &mut D, name: &str, servitor: &str, unit_name: &str) {
-		diesel::insert_into(servitor_servers::table)
-			.values(&NewServitorServer {
-				name,
-				servitor,
-				unit_name,
-			})
-			.execute(conn)
-			.await
-			.expect("Failed to insert test server");
-	}
-
-	// --- permit_user tests ---
 
 	#[tokio::test]
 	async fn given_nonexistent_server_then_permit_user_returns_server_error() {
@@ -232,12 +218,10 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		// First permit succeeds
 		permit_user(&mut conn, "ExistingServer", UserId::new(12345678901234567))
 			.await
 			.unwrap();
 
-		// Second permit should fail
 		let result = permit_user(&mut conn, "ExistingServer", UserId::new(12345678901234567)).await;
 
 		assert_eq!(
@@ -258,7 +242,6 @@ mod tests {
 
 		assert_eq!(result, Ok(()));
 
-		// Verify the user was actually inserted
 		let count: i64 = servitor_server_authorized_users::table
 			.count()
 			.get_result(&mut conn)
@@ -266,8 +249,6 @@ mod tests {
 			.unwrap();
 		assert_eq!(count, 1);
 	}
-
-	// --- revoke_user tests ---
 
 	#[tokio::test]
 	async fn given_nonexistent_server_then_revoke_user_returns_server_error() {
@@ -304,17 +285,14 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		// First permit the user
 		permit_user(&mut conn, "ExistingServer", UserId::new(12345678901234567))
 			.await
 			.unwrap();
 
-		// Now revoke
 		let result = revoke_user(&mut conn, "ExistingServer", UserId::new(12345678901234567)).await;
 
 		assert_eq!(result, Ok(()));
 
-		// Verify the user was actually removed
 		let count: i64 = servitor_server_authorized_users::table
 			.count()
 			.get_result(&mut conn)
@@ -322,8 +300,6 @@ mod tests {
 			.unwrap();
 		assert_eq!(count, 0);
 	}
-
-	// --- permit_role tests ---
 
 	#[tokio::test]
 	async fn given_nonexistent_server_then_permit_role_returns_server_error() {
@@ -344,12 +320,10 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		// First permit succeeds
 		permit_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543))
 			.await
 			.unwrap();
 
-		// Second permit should fail
 		let result = permit_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(
@@ -370,8 +344,6 @@ mod tests {
 
 		assert_eq!(result, Ok(()));
 	}
-
-	// --- revoke_role tests ---
 
 	#[tokio::test]
 	async fn given_nonexistent_server_then_revoke_role_returns_server_error() {
@@ -408,12 +380,10 @@ mod tests {
 		let mut conn = setup_test_db().await;
 		insert_test_server(&mut conn, "ExistingServer", "foo", "bar").await;
 
-		// First permit the role
 		permit_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543))
 			.await
 			.unwrap();
 
-		// Now revoke
 		let result = revoke_role(&mut conn, "ExistingServer", RoleId::new(98765432109876543)).await;
 
 		assert_eq!(result, Ok(()));

@@ -95,16 +95,15 @@ pub async fn remove_machine<D: DbConnection>(
 	conn: &mut D,
 	name: &str,
 ) -> Result<(), RemoveMachineError> {
-	let affected = diesel::delete(
-		wake_on_lan_machines::table.filter(wake_on_lan_machines::name.eq(name)),
-	)
-	.execute(conn)
-	.await
-	.map_err(|e| {
-		RemoveMachineError::Unexpected(UnexpectedError(
-			anyhow::Error::new(e).context("Failed to delete machine from database"),
-		))
-	})?;
+	let affected =
+		diesel::delete(wake_on_lan_machines::table.filter(wake_on_lan_machines::name.eq(name)))
+			.execute(conn)
+			.await
+			.map_err(|e| {
+				RemoveMachineError::Unexpected(UnexpectedError(
+					anyhow::Error::new(e).context("Failed to delete machine from database"),
+				))
+			})?;
 
 	if affected == 0 {
 		return Err(MachineError::DoesNotExist {
@@ -121,14 +120,11 @@ pub async fn remove_machine<D: DbConnection>(
 pub async fn list_machines<D: DbConnection>(
 	conn: &mut D,
 ) -> Result<Vec<WakeOnLanMachine>, ListMachinesError> {
-	wake_on_lan_machines::table
-		.load(conn)
-		.await
-		.map_err(|e| {
-			ListMachinesError::Unexpected(UnexpectedError(
-				anyhow::Error::new(e).context("Failed to load machines from database"),
-			))
-		})
+	wake_on_lan_machines::table.load(conn).await.map_err(|e| {
+		ListMachinesError::Unexpected(UnexpectedError(
+			anyhow::Error::new(e).context("Failed to load machines from database"),
+		))
+	})
 }
 
 pub async fn describe_machine<D: DbConnection>(
@@ -156,8 +152,7 @@ pub async fn describe_machine<D: DbConnection>(
 			.await
 			.map_err(|e| {
 				DescribeMachineError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized users from database"),
+					anyhow::Error::new(e).context("Failed to query authorized users from database"),
 				))
 			})?;
 
@@ -168,8 +163,7 @@ pub async fn describe_machine<D: DbConnection>(
 			.await
 			.map_err(|e| {
 				DescribeMachineError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized roles from database"),
+					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
 				))
 			})?;
 
@@ -189,29 +183,14 @@ pub async fn describe_machine<D: DbConnection>(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::controllers::wake_on_lan::tests::insert_test_machine;
 	use crate::db::tests::setup_test_db;
 	use crate::models::wake_on_lan::{
 		NewWakeOnLanMachineAuthorizedRole, NewWakeOnLanMachineAuthorizedUser,
 	};
 	use crate::services::wake_on_lan::MacAddress;
 
-	async fn insert_test_machine<D: DbConnection>(
-		conn: &mut D,
-		name: &str,
-		mac: &str,
-	) {
-		use crate::schema::wake_on_lan_machines;
-
-		diesel::insert_into(wake_on_lan_machines::table)
-			.values(&NewWakeOnLanMachine { name, mac: &mac.parse().unwrap() })
-			.execute(conn)
-			.await
-			.expect("Failed to insert test machine");
-	}
-
-	async fn get_all_machines<D: DbConnection>(
-		conn: &mut D,
-	) -> Vec<WakeOnLanMachine> {
+	async fn get_all_machines<D: DbConnection>(conn: &mut D) -> Vec<WakeOnLanMachine> {
 		use crate::schema::wake_on_lan_machines;
 
 		wake_on_lan_machines::table
@@ -238,7 +217,10 @@ mod tests {
 		let machines = get_all_machines(&mut conn).await;
 		assert_eq!(machines.len(), 1);
 		assert_eq!(machines[0].name, "SomeMachine");
-		assert_eq!(machines[0].mac, MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]));
+		assert_eq!(
+			machines[0].mac,
+			MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+		);
 	}
 
 	#[tokio::test]
@@ -289,7 +271,10 @@ mod tests {
 		let machines = get_all_machines(&mut conn).await;
 		assert_eq!(machines.len(), 1);
 		assert_eq!(machines[0].name, "NewMachine");
-		assert_eq!(machines[0].mac, MacAddress([0x00, 0x00, 0x00, 0x00, 0x00, 0x01]));
+		assert_eq!(
+			machines[0].mac,
+			MacAddress([0x00, 0x00, 0x00, 0x00, 0x00, 0x01])
+		);
 	}
 
 	#[tokio::test]
@@ -347,9 +332,15 @@ mod tests {
 
 		assert_eq!(result.len(), 2);
 		assert_eq!(result[0].name, "MachineA");
-		assert_eq!(result[0].mac, MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]));
+		assert_eq!(
+			result[0].mac,
+			MacAddress([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+		);
 		assert_eq!(result[1].name, "MachineB");
-		assert_eq!(result[1].mac, MacAddress([0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C]));
+		assert_eq!(
+			result[1].mac,
+			MacAddress([0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C])
+		);
 	}
 
 	#[tokio::test]
@@ -374,7 +365,9 @@ mod tests {
 
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		let result = describe_machine(&mut conn, "ExistingMachine").await.unwrap();
+		let result = describe_machine(&mut conn, "ExistingMachine")
+			.await
+			.unwrap();
 
 		assert_eq!(result.machine.name, "ExistingMachine");
 		assert_eq!(
@@ -391,14 +384,12 @@ mod tests {
 
 		insert_test_machine(&mut conn, "ExistingMachine", "01:02:03:04:05:06").await;
 
-		// Get the machine id
 		let machine: WakeOnLanMachine = wake_on_lan_machines::table
 			.filter(wake_on_lan_machines::name.eq("ExistingMachine"))
 			.first(&mut conn)
 			.await
 			.unwrap();
 
-		// Insert authorized users
 		diesel::insert_into(wake_on_lan_machines_authorized_users::table)
 			.values(&NewWakeOnLanMachineAuthorizedUser {
 				machine_id: machine.id,
@@ -408,7 +399,6 @@ mod tests {
 			.await
 			.unwrap();
 
-		// Insert authorized roles
 		diesel::insert_into(wake_on_lan_machines_authorized_roles::table)
 			.values(&NewWakeOnLanMachineAuthorizedRole {
 				machine_id: machine.id,
@@ -418,7 +408,9 @@ mod tests {
 			.await
 			.unwrap();
 
-		let result = describe_machine(&mut conn, "ExistingMachine").await.unwrap();
+		let result = describe_machine(&mut conn, "ExistingMachine")
+			.await
+			.unwrap();
 
 		assert_eq!(result.machine.name, "ExistingMachine");
 		assert_eq!(

@@ -1,7 +1,11 @@
 use crate::db::DbConnection;
 use crate::errors::UnexpectedError;
-use crate::models::servitor::{ServitorServer, ServitorServerAuthorizedRole, ServitorServerAuthorizedUser};
-use crate::schema::{servitor_server_authorized_roles, servitor_server_authorized_users, servitor_servers};
+use crate::models::servitor::{
+	ServitorServer, ServitorServerAuthorizedRole, ServitorServerAuthorizedUser,
+};
+use crate::schema::{
+	servitor_server_authorized_roles, servitor_server_authorized_users, servitor_servers,
+};
 use crate::services::servitor::{ServitorController, ServitorError, UnitStatus};
 use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
@@ -173,8 +177,7 @@ where
 			.await
 			.map_err(|e| {
 				ExecuteServitorActionError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized users from database"),
+					anyhow::Error::new(e).context("Failed to query authorized users from database"),
 				))
 			})?;
 
@@ -185,8 +188,7 @@ where
 			.await
 			.map_err(|e| {
 				ExecuteServitorActionError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized roles from database"),
+					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
 				))
 			})?;
 
@@ -222,9 +224,12 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::controllers::servitor::tests::insert_test_server;
 	use crate::controllers::tests::{mock_author_dms, mock_author_guild};
 	use crate::db::tests::setup_test_db;
-	use crate::models::servitor::{NewServitorServer, NewServitorServerAuthorizedRole, NewServitorServerAuthorizedUser};
+	use crate::models::servitor::{
+		NewServitorServerAuthorizedRole, NewServitorServerAuthorizedUser,
+	};
 	use crate::services::servitor::tests::MockServitorController;
 	use diesel::SqliteConnection;
 	use diesel_async::sync_connection_wrapper::SyncConnectionWrapper;
@@ -233,23 +238,6 @@ mod tests {
 	use std::fmt::Debug;
 
 	type TestConn = SyncConnectionWrapper<SqliteConnection>;
-
-	async fn insert_test_server<D: DbConnection>(
-		conn: &mut D,
-		name: &str,
-		servitor: &str,
-		unit_name: &str,
-	) {
-		diesel::insert_into(servitor_servers::table)
-			.values(&NewServitorServer {
-				name,
-				servitor,
-				unit_name,
-			})
-			.execute(conn)
-			.await
-			.expect("Failed to insert test server");
-	}
 
 	async fn get_server_id<D: DbConnection>(conn: &mut D, name: &str) -> i32 {
 		servitor_servers::table
@@ -312,7 +300,14 @@ mod tests {
 		let serv = mock_servitor_handlers();
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
-		let result = action(&mut conn, &serv, "NonExistingServer", &author, member.as_ref()).await;
+		let result = action(
+			&mut conn,
+			&serv,
+			"NonExistingServer",
+			&author,
+			member.as_ref(),
+		)
+		.await;
 
 		assert_eq!(
 			result,

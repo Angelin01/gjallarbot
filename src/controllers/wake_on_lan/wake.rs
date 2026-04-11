@@ -1,8 +1,13 @@
 use super::MachineError;
 use crate::db::DbConnection;
 use crate::errors::UnexpectedError;
-use crate::models::wake_on_lan::{WakeOnLanMachine, WakeOnLanMachineAuthorizedRole, WakeOnLanMachineAuthorizedUser};
-use crate::schema::{wake_on_lan_machines, wake_on_lan_machines_authorized_roles, wake_on_lan_machines_authorized_users};
+use crate::models::wake_on_lan::{
+	WakeOnLanMachine, WakeOnLanMachineAuthorizedRole, WakeOnLanMachineAuthorizedUser,
+};
+use crate::schema::{
+	wake_on_lan_machines, wake_on_lan_machines_authorized_roles,
+	wake_on_lan_machines_authorized_users,
+};
 use crate::services::wake_on_lan::{MagicPacket, MagicPacketSender};
 use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
@@ -52,8 +57,7 @@ pub async fn wake<D: DbConnection, S: MagicPacketSender>(
 			.await
 			.map_err(|e| {
 				WakeError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized users from database"),
+					anyhow::Error::new(e).context("Failed to query authorized users from database"),
 				))
 			})?;
 
@@ -64,8 +68,7 @@ pub async fn wake<D: DbConnection, S: MagicPacketSender>(
 			.await
 			.map_err(|e| {
 				WakeError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e)
-						.context("Failed to query authorized roles from database"),
+					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
 				))
 			})?;
 
@@ -98,8 +101,11 @@ pub async fn wake<D: DbConnection, S: MagicPacketSender>(
 mod tests {
 	use super::super::super::tests::{mock_author_dms, mock_author_guild};
 	use super::*;
+	use crate::controllers::wake_on_lan::tests::insert_test_machine;
 	use crate::db::tests::setup_test_db;
-	use crate::models::wake_on_lan::{NewWakeOnLanMachine, NewWakeOnLanMachineAuthorizedRole, NewWakeOnLanMachineAuthorizedUser};
+	use crate::models::wake_on_lan::{
+		NewWakeOnLanMachineAuthorizedRole, NewWakeOnLanMachineAuthorizedUser,
+	};
 	use crate::schema::wake_on_lan_machines;
 	use crate::services::wake_on_lan::MacAddress;
 	use serenity::all::RoleId;
@@ -130,17 +136,6 @@ mod tests {
 
 			Ok(())
 		}
-	}
-
-	async fn insert_test_machine<D: DbConnection>(conn: &mut D, name: &str, mac: &str) {
-		diesel::insert_into(wake_on_lan_machines::table)
-			.values(&NewWakeOnLanMachine {
-				name,
-				mac: &mac.parse::<MacAddress>().unwrap(),
-			})
-			.execute(conn)
-			.await
-			.expect("Failed to insert test machine");
 	}
 
 	async fn get_machine_id<D: DbConnection>(conn: &mut D, name: &str) -> i32 {
