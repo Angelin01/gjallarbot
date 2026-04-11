@@ -1,6 +1,6 @@
 use crate::commands;
 use crate::config::Config;
-use crate::data::{BotData, PersistentJson};
+use crate::db::DbConnection;
 use crate::services::servitor::HttpServitorController;
 use anyhow::Result;
 use log::{debug, error};
@@ -9,26 +9,26 @@ use secrecy::ExposeSecret;
 use serenity::Client;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
-pub struct BotState {
-	pub data: BotData,
+pub struct BotState<D: DbConnection> {
+	pub conn: Arc<Mutex<D>>,
 	pub servitor: Arc<BTreeMap<String, HttpServitorController>>,
 }
 
 pub type BotError = Box<dyn std::error::Error + Send + Sync>;
-pub type Context<'a> = poise::Context<'a, BotState, BotError>;
+pub type Context<'a, D> = poise::Context<'a, BotState<D>, BotError>;
 
-pub async fn client(config: &Config) -> Result<Client> {
+pub async fn client<D: DbConnection + 'static>(config: &Config, conn: D) -> Result<Client> {
 	let intents = serenity::GatewayIntents::non_privileged();
 
 	let client = serenity::ClientBuilder::new(config.bot.token.expose_secret(), intents)
-		.framework(build_framework(&config).await?)
+		.framework(build_framework(&config, conn).await?)
 		.await?;
 	Ok(client)
 }
 
-async fn build_framework(config: &Config) -> Result<Framework<BotState, BotError>> {
+async fn build_framework<D: DbConnection + 'static>(config: &Config, conn: D) -> Result<Framework<BotState<D>, BotError>> {
 	let servitor_controllers = config
 		.servitor
 		.iter()
@@ -39,15 +39,14 @@ async fn build_framework(config: &Config) -> Result<Framework<BotState, BotError
 		.collect::<Result<BTreeMap<_, _>, _>>()?;
 
 	let servitor = Arc::new(servitor_controllers);
-	let data = Arc::new(RwLock::new(PersistentJson::new("data.json")?));
-
+	let conn = Arc::new(Mutex::new(conn));
 	Ok(Framework::builder()
 		.options(framework_options())
 		.setup(|ctx, _, framework| {
 			Box::pin(async move {
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 				Ok(BotState {
-					data,
+					conn,
 					servitor,
 				})
 			})
@@ -55,7 +54,7 @@ async fn build_framework(config: &Config) -> Result<Framework<BotState, BotError
 		.build())
 }
 
-fn framework_options() -> FrameworkOptions<BotState, BotError> {
+fn framework_options<D: DbConnection + 'static>() -> FrameworkOptions<BotState<D>, BotError> {
 	FrameworkOptions {
 		commands: commands::commands(),
 		on_error: |error| Box::pin(on_error(error)),
@@ -65,12 +64,12 @@ fn framework_options() -> FrameworkOptions<BotState, BotError> {
 	}
 }
 
-fn log_replies(_: Context, reply: poise::CreateReply) -> poise::CreateReply {
+fn log_replies<D: DbConnection>(_: Context<D>, reply: poise::CreateReply) -> poise::CreateReply {
 	debug!("Replied with embeds {:?}", reply.embeds);
 	reply
 }
 
-async fn on_error(error: poise::FrameworkError<'_, BotState, BotError>) {
+async fn on_error<D: DbConnection>(error: poise::FrameworkError<'_, BotState<D>, BotError>) {
 	match error {
 		poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
 		poise::FrameworkError::Command { error, ctx, .. } => {

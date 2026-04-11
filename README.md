@@ -12,8 +12,8 @@ Right now, the bot does two things:
 
 ## Data Permanence
 
-The bot writes a `data.json` file to its working directory to persist data. It is a very silly, very simple
-implementation, that should probably be replaced with something like SQLite should the bot grow any bigger.
+The bot uses a SQLite file in `data/gjallarbot.db`, relative to the bot's working directory. It will automatically
+run migrations and migrate old data from the janky `data.json` system from before. 
 
 ## Configuring
 

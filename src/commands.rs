@@ -6,7 +6,9 @@ mod servitor;
 use poise::{Command, CreateReply, ReplyHandle};
 use serenity::all::{CreateAllowedMentions, CreateEmbed};
 use crate::bot::{BotError, BotState, Context};
-pub fn commands() -> Vec<Command<BotState, BotError>> {
+use crate::db::DbConnection;
+
+pub fn commands<D: DbConnection + 'static>() -> Vec<Command<BotState<D>, BotError>> {
 	let commands = vec![
 		wake_on_lan::wake_on_lan(),
 		servitor::servitor(),
@@ -16,9 +18,9 @@ pub fn commands() -> Vec<Command<BotState, BotError>> {
 	commands
 }
 
-const DISCORD_MAX_AUTOCOMPLETE_CHOICES: usize = 25;
+const DISCORD_MAX_AUTOCOMPLETE_CHOICES: i64 = 25;
 
-async fn reply_no_mentions<'a>(ctx: Context<'a>, embed: CreateEmbed) -> Result<ReplyHandle<'a>, BotError> {
+async fn reply_no_mentions<'a, D: DbConnection>(ctx: Context<'a, D>, embed: CreateEmbed) -> Result<ReplyHandle<'a>, BotError> {
 	Ok(ctx.send(
 		CreateReply::default()
 			.embed(embed)

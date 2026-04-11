@@ -4,6 +4,10 @@ mod server;
 
 use crate::bot::{BotError, Context};
 use crate::commands::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
+use crate::db::DbConnection;
+use crate::schema::servitor_servers;
+use diesel::{QueryDsl, TextExpressionMethods};
+use diesel_async::RunQueryDsl;
 
 #[poise::command(
 	slash_command,
@@ -24,29 +28,27 @@ use crate::commands::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
 	),
 	subcommand_required
 )]
-pub async fn servitor(_: Context<'_>) -> Result<(), BotError> {
+pub async fn servitor<D: DbConnection>(_: Context<'_, D>) -> Result<(), BotError> {
 	unreachable!("Can't call parent commands");
 }
 
-async fn autocomplete_server_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
-	ctx.data()
-		.data
-		.read()
+async fn autocomplete_server_name<D: DbConnection>(ctx: Context<'_, D>, partial: &str) -> Vec<String> {
+	let mut conn = ctx.data().conn.lock().await;
+	servitor_servers::table
+		.select(servitor_servers::name)
+		.filter(servitor_servers::name.like(format!("{partial}%")))
+		.limit(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
+		.load::<String>(&mut *conn)
 		.await
-		.servitor
-		.keys()
-		.filter(|name| name.starts_with(partial))
-		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
-		.cloned()
-		.collect()
+		.unwrap_or_default()
 }
 
-async fn autocomplete_servitor_name(ctx: Context<'_>, partial: &str) -> Vec<String> {
+async fn autocomplete_servitor_name<D: DbConnection>(ctx: Context<'_, D>, partial: &str) -> Vec<String> {
 	ctx.data()
 		.servitor
 		.keys()
 		.filter(|name| name.starts_with(partial))
-		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
+		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES as usize)
 		.cloned()
 		.collect()
 }

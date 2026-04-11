@@ -13,7 +13,11 @@ target/
 .idea/
 
 # Running the bot locally will generate this file
+data/
 data.json
 
 # local configs
 gjallarbot.toml
+
+# Diesel
+/migrations/.diesel_lock

@@ -1,7 +1,4 @@
 use thiserror::Error;
-use tokio::sync::RwLockReadGuard;
-use crate::data::{Data, PersistentJson, PersistentWriteGuard};
-use crate::data::wake_on_lan::WakeOnLanMachineInfo;
 
 pub mod authorization;
 pub mod machine;
@@ -16,26 +13,21 @@ pub enum MachineError {
 	AlreadyExists { machine_name: String },
 }
 
-async fn get_machine_info_mut<'a>(
-	data_write: &'a mut PersistentWriteGuard<'_, Data>,
-	machine_name: &str,
-) -> Result<&'a mut WakeOnLanMachineInfo, MachineError> {
-	data_write
-		.wake_on_lan
-		.get_mut(machine_name)
-		.ok_or(MachineError::DoesNotExist {
-			machine_name: machine_name.into(),
-		})
-}
+#[cfg(test)]
+mod tests {
+	use crate::db::DbConnection;
+	use crate::models::wake_on_lan::NewWakeOnLanMachine;
+	use crate::schema::wake_on_lan_machines;
+	use diesel_async::RunQueryDsl;
 
-async fn get_machine_info<'a>(
-	data_read: &'a RwLockReadGuard<'_, PersistentJson<Data>>,
-	machine_name: &str,
-) -> Result<&'a WakeOnLanMachineInfo, MachineError> {
-	data_read
-		.wake_on_lan
-		.get(machine_name)
-		.ok_or(MachineError::DoesNotExist {
-			machine_name: machine_name.into(),
-		})
+	pub async fn insert_test_machine<D: DbConnection>(conn: &mut D, name: &str, mac: &str) {
+		diesel::insert_into(wake_on_lan_machines::table)
+			.values(&NewWakeOnLanMachine {
+				name,
+				mac: &mac.parse().unwrap(),
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert test machine");
+	}
 }

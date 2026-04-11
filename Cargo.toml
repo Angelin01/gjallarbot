@@ -9,23 +9,27 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.*"
-figment = { version = "0.10.19", default-features = false, features = ["env", "toml"] }
+figment = { version = "0.10.*", default-features = false, features = ["env", "toml"] }
 log = "0.4.*"
-reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12.*", default-features = false, features = ["rustls-tls", "json"] }
 poise = { version = "0.6.*", default-features = false, features = ["chrono"] }
 serenity = { version = "0.12.*", default-features = false, features = ["chrono", "rustls_backend", "simd-json", "parking_lot"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.*", features = ["derive"] }
 serde_json = { version = "1.0.*" }
-tracing-subscriber = { version = "0.3.18", features = ["parking_lot", "env-filter"] }
-thiserror = "2.0.11"
-tokio = { version = "1.43.0", features = ["macros", "parking_lot", "rt-multi-thread", "signal"] }
-chrono = "0.4.40"
+tracing-subscriber = { version = "0.3.*", features = ["parking_lot", "env-filter"] }
+thiserror = "2.0.*"
+tokio = { version = "1.48.*", features = ["macros", "parking_lot", "rt-multi-thread", "signal"] }
+chrono = "0.4.*"
+diesel = { version = "2.3.*", default-features = false, features = ["sqlite", "without-deprecated", "chrono", "returning_clauses_for_sqlite_3_35"] }
+diesel-async = { version = "0.7.*", features = ["sqlite", "async-connection-wrapper"] }
+diesel_migrations = { version = "2.3.*", features = ["sqlite"] }
+libsqlite3-sys = { version = "0.35.*", features = ["bundled"] }
 
 [profile.release]
 strip = "debuginfo"
 lto = "fat"
 
 [dev-dependencies]
-tempfile = "3.17.1"
-rstest = "0.25.0"
+tempfile = "3.23.*"
+rstest = "0.26.*"

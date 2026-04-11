@@ -1,12 +1,21 @@
-use super::super::is_user_authorized;
-use crate::controllers::servitor::{get_server_info, ServerError};
-use crate::data::BotData;
+use crate::db::DbConnection;
+use crate::errors::UnexpectedError;
+use crate::models::servitor::{
+	ServitorServer, ServitorServerAuthorizedRole, ServitorServerAuthorizedUser,
+};
+use crate::schema::{
+	servitor_server_authorized_roles, servitor_server_authorized_users, servitor_servers,
+};
 use crate::services::servitor::{ServitorController, ServitorError, UnitStatus};
+use diesel::{ExpressionMethods, QueryDsl};
+use diesel_async::RunQueryDsl;
 use log::info;
 use serenity::all::{Member, User, UserId};
 use std::collections::BTreeMap;
 use std::ops::AsyncFnOnce;
 use thiserror::Error;
+
+use super::ServerError;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum ExecuteServitorActionError {
@@ -24,17 +33,20 @@ pub enum ExecuteServitorActionError {
 
 	#[error(transparent)]
 	Servitor(#[from] ServitorError),
+
+	#[error("An unexpected error occurred")]
+	Unexpected(#[from] UnexpectedError),
 }
 
-pub async fn start<S: ServitorController>(
-	data: &BotData,
+pub async fn start<D: DbConnection, S: ServitorController>(
+	conn: &mut D,
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
 	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
-		data,
+		conn,
 		servitor_handlers,
 		server_name,
 		author,
@@ -47,15 +59,15 @@ pub async fn start<S: ServitorController>(
 	.await
 }
 
-pub async fn stop<S: ServitorController>(
-	data: &BotData,
+pub async fn stop<D: DbConnection, S: ServitorController>(
+	conn: &mut D,
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
 	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
-		data,
+		conn,
 		servitor_handlers,
 		server_name,
 		author,
@@ -68,15 +80,15 @@ pub async fn stop<S: ServitorController>(
 	.await
 }
 
-pub async fn restart<S: ServitorController>(
-	data: &BotData,
+pub async fn restart<D: DbConnection, S: ServitorController>(
+	conn: &mut D,
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
 	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
-		data,
+		conn,
 		servitor_handlers,
 		server_name,
 		author,
@@ -89,15 +101,15 @@ pub async fn restart<S: ServitorController>(
 	.await
 }
 
-pub async fn reload<S: ServitorController>(
-	data: &BotData,
+pub async fn reload<D: DbConnection, S: ServitorController>(
+	conn: &mut D,
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
 	member: Option<&Member>,
 ) -> Result<(), ExecuteServitorActionError> {
 	execute_action(
-		data,
+		conn,
 		servitor_handlers,
 		server_name,
 		author,
@@ -110,15 +122,15 @@ pub async fn reload<S: ServitorController>(
 	.await
 }
 
-pub async fn status<S: ServitorController>(
-	data: &BotData,
+pub async fn status<D: DbConnection, S: ServitorController>(
+	conn: &mut D,
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
 	member: Option<&Member>,
 ) -> Result<UnitStatus, ExecuteServitorActionError> {
 	execute_action(
-		data,
+		conn,
 		servitor_handlers,
 		server_name,
 		author,
@@ -131,8 +143,8 @@ pub async fn status<S: ServitorController>(
 	.await
 }
 
-async fn execute_action<S, F, T>(
-	data: &BotData,
+async fn execute_action<D, S, F, T>(
+	conn: &mut D,
 	servitor_handlers: &BTreeMap<String, S>,
 	server_name: &str,
 	author: &User,
@@ -140,40 +152,116 @@ async fn execute_action<S, F, T>(
 	action: F,
 ) -> Result<T, ExecuteServitorActionError>
 where
+	D: DbConnection,
 	S: ServitorController,
 	F: AsyncFnOnce(&S, &str) -> Result<T, ServitorError>,
 {
-	let read = data.read().await;
+	let server: ServitorServer = servitor_servers::table
+		.filter(servitor_servers::name.eq(server_name))
+		.first(conn)
+		.await
+		.map_err(|e| match e {
+			diesel::result::Error::NotFound => ServerError::DoesNotExist {
+				server_name: server_name.into(),
+			}
+			.into(),
+			other => ExecuteServitorActionError::Unexpected(UnexpectedError(
+				anyhow::Error::new(other).context("Failed to query server from database"),
+			)),
+		})?;
 
-	let server_info = get_server_info(&read, server_name).await?;
+	let mut authorized = servitor_server_authorized_users::table
+		.filter(servitor_server_authorized_users::server_id.eq(server.id))
+		.filter(servitor_server_authorized_users::user_id.eq(author.id.get() as i64))
+		.first::<ServitorServerAuthorizedUser>(conn)
+		.await
+		.is_ok();
 
-	if !is_user_authorized(author, member, server_info) {
+	if !authorized {
+		if let Some(m) = member {
+			let role_ids: Vec<i64> = m.roles.iter().map(|r| r.get() as i64).collect();
+			authorized = servitor_server_authorized_roles::table
+				.filter(servitor_server_authorized_roles::server_id.eq(server.id))
+				.filter(servitor_server_authorized_roles::role_id.eq_any(role_ids))
+				.first::<ServitorServerAuthorizedRole>(conn)
+				.await
+				.is_ok();
+		}
+	}
+
+	if !authorized {
 		return Err(ExecuteServitorActionError::Unauthorized {
 			user: author.id,
 			server_name: server_name.to_string(),
 		});
 	}
 
-	let servitor_handler = servitor_handlers.get(&server_info.servitor).ok_or(
+	let servitor_handler = servitor_handlers.get(&server.servitor).ok_or(
 		ExecuteServitorActionError::InvalidServitor {
 			server_name: server_name.to_string(),
-			servitor_name: server_info.servitor.to_string(),
+			servitor_name: server.servitor.to_string(),
 		},
 	)?;
 
-	Ok(action(servitor_handler, &server_info.unit_name.clone()).await?)
+	Ok(action(servitor_handler, &server.unit_name).await?)
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::controllers::servitor::tests::insert_test_server;
 	use crate::controllers::tests::{mock_author_dms, mock_author_guild};
-	use crate::data::tests::mock_data;
-	use crate::services::servitor::tests::{controllers_from_bot_data, MockServitorController};
+	use crate::db::tests::setup_test_db;
+	use crate::models::servitor::{
+		NewServitorServerAuthorizedRole, NewServitorServerAuthorizedUser,
+	};
+	use crate::services::servitor::tests::MockServitorController;
+	use diesel::SqliteConnection;
+	use diesel_async::sync_connection_wrapper::SyncConnectionWrapper;
 	use rstest::rstest;
-	use serde_json::json;
 	use serenity::all::RoleId;
 	use std::fmt::Debug;
+
+	type TestConn = SyncConnectionWrapper<SqliteConnection>;
+
+	async fn get_server_id<D: DbConnection>(conn: &mut D, name: &str) -> i32 {
+		servitor_servers::table
+			.filter(servitor_servers::name.eq(name))
+			.select(servitor_servers::id)
+			.first::<i32>(conn)
+			.await
+			.expect("Failed to get server id")
+	}
+
+	async fn permit_test_user<D: DbConnection>(conn: &mut D, server_name: &str, user_id: u64) {
+		let server_id = get_server_id(conn, server_name).await;
+		diesel::insert_into(servitor_server_authorized_users::table)
+			.values(&NewServitorServerAuthorizedUser {
+				server_id,
+				user_id: user_id as i64,
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert authorized user");
+	}
+
+	async fn permit_test_role<D: DbConnection>(conn: &mut D, server_name: &str, role_id: u64) {
+		let server_id = get_server_id(conn, server_name).await;
+		diesel::insert_into(servitor_server_authorized_roles::table)
+			.values(&NewServitorServerAuthorizedRole {
+				server_id,
+				role_id: role_id as i64,
+			})
+			.execute(conn)
+			.await
+			.expect("Failed to insert authorized role");
+	}
+
+	fn mock_servitor_handlers() -> BTreeMap<String, MockServitorController> {
+		let mut handlers = BTreeMap::new();
+		handlers.insert("foo".to_string(), MockServitorController::new());
+		handlers
+	}
 
 	#[rstest]
 	#[case(start)]
@@ -186,20 +274,25 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
 			Option<&Member>,
 		) -> Result<T, ExecuteServitorActionError>,
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {}
-		})));
-		let serv = controllers_from_bot_data(&data).await;
+		let mut conn: TestConn = setup_test_db().await;
+		let serv = mock_servitor_handlers();
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
-		let result = action(&data, &serv, "NonExistingServer", &author, member.as_ref()).await;
+		let result = action(
+			&mut conn,
+			&serv,
+			"NonExistingServer",
+			&author,
+			member.as_ref(),
+		)
+		.await;
 
 		assert_eq!(
 			result,
@@ -223,28 +316,22 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
 			Option<&Member>,
 		) -> Result<T, ExecuteServitorActionError>,
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [12345678901234567u64],
-				}
-			}
-		})));
+		let mut conn: TestConn = setup_test_db().await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+		permit_test_user(&mut conn, "SomeServer", 12345678901234567).await;
 
-		let mut serv = controllers_from_bot_data(&data).await;
+		let mut serv = mock_servitor_handlers();
 		serv.remove("foo");
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567u64));
 
-		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+		let result = action(&mut conn, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -267,27 +354,24 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
 			Option<&Member>,
 		) -> Result<T, ExecuteServitorActionError>,
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [98765432109876543i64, 98765432109876542i64],
-					"authorized_roles": [98765432109876541i64, 98765432109876540i64]
-				}
-			}
-		})));
-		let serv = controllers_from_bot_data(&data).await;
+		let mut conn: TestConn = setup_test_db().await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+		permit_test_user(&mut conn, "SomeServer", 98765432109876543).await;
+		permit_test_user(&mut conn, "SomeServer", 98765432109876542).await;
+		permit_test_role(&mut conn, "SomeServer", 98765432109876541).await;
+		permit_test_role(&mut conn, "SomeServer", 98765432109876540).await;
+
+		let serv = mock_servitor_handlers();
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567));
 
-		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+		let result = action(&mut conn, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -310,27 +394,24 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
 			Option<&Member>,
 		) -> Result<T, ExecuteServitorActionError>,
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [98765432109876543u64, 98765432109876542u64],
-					"authorized_roles": [98765432109876541u64, 98765432109876540u64]
-				}
-			}
-		})));
-		let serv = controllers_from_bot_data(&data).await;
+		let mut conn: TestConn = setup_test_db().await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+		permit_test_user(&mut conn, "SomeServer", 98765432109876543).await;
+		permit_test_user(&mut conn, "SomeServer", 98765432109876542).await;
+		permit_test_role(&mut conn, "SomeServer", 98765432109876541).await;
+		permit_test_role(&mut conn, "SomeServer", 98765432109876540).await;
+
+		let serv = mock_servitor_handlers();
 		let (author, member) = mock_author_guild(UserId::new(12345678901234567), vec![]);
 
-		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+		let result = action(&mut conn, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -353,7 +434,7 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
@@ -361,21 +442,15 @@ mod tests {
 		) -> Result<T, ExecuteServitorActionError>,
 		#[case] calls: (usize, usize, usize, usize, usize),
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
-		let serv = controllers_from_bot_data(&data).await;
+		let mut conn: TestConn = setup_test_db().await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+		permit_test_user(&mut conn, "SomeServer", 12345678901234567).await;
+
+		let serv = mock_servitor_handlers();
 		serv["foo"].set_error(ServitorError::Unauthorized).await;
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567u64));
 
-		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+		let result = action(&mut conn, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(
 			result,
@@ -397,7 +472,7 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
@@ -406,20 +481,14 @@ mod tests {
 		#[case] calls: (usize, usize, usize, usize, usize),
 		#[case] expected_result: T,
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
-		let serv = controllers_from_bot_data(&data).await;
+		let mut conn: TestConn = setup_test_db().await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+		permit_test_user(&mut conn, "SomeServer", 12345678901234567).await;
+
+		let serv = mock_servitor_handlers();
 		let (author, member) = mock_author_dms(UserId::new(12345678901234567u64));
 
-		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+		let result = action(&mut conn, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(result, Ok(expected_result));
 		serv["foo"].assert_called_times(calls.0, calls.1, calls.2, calls.3, calls.4);
@@ -436,7 +505,7 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
@@ -445,20 +514,14 @@ mod tests {
 		#[case] calls: (usize, usize, usize, usize, usize),
 		#[case] expected_result: T,
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [12345678901234567u64],
-					"authorized_roles": []
-				}
-			}
-		})));
-		let serv = controllers_from_bot_data(&data).await;
+		let mut conn: TestConn = setup_test_db().await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+		permit_test_user(&mut conn, "SomeServer", 12345678901234567).await;
+
+		let serv = mock_servitor_handlers();
 		let (author, member) = mock_author_guild(UserId::new(12345678901234567u64), vec![]);
 
-		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+		let result = action(&mut conn, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(result, Ok(expected_result));
 		serv["foo"].assert_called_times(calls.0, calls.1, calls.2, calls.3, calls.4);
@@ -475,7 +538,7 @@ mod tests {
 		T: Debug + PartialEq,
 	>(
 		#[case] action: impl AsyncFnOnce(
-			&BotData,
+			&mut TestConn,
 			&BTreeMap<String, MockServitorController>,
 			&str,
 			&User,
@@ -484,23 +547,17 @@ mod tests {
 		#[case] calls: (usize, usize, usize, usize, usize),
 		#[case] expected_result: T,
 	) {
-		let data = mock_data(Some(json!({
-			"servitor": {
-				"SomeServer": {
-					"servitor": "foo",
-					"unit_name": "bar",
-					"authorized_users": [],
-					"authorized_roles": [98765432109876543u64]
-				}
-			}
-		})));
-		let serv = controllers_from_bot_data(&data).await;
+		let mut conn: TestConn = setup_test_db().await;
+		insert_test_server(&mut conn, "SomeServer", "foo", "bar").await;
+		permit_test_role(&mut conn, "SomeServer", 98765432109876543).await;
+
+		let serv = mock_servitor_handlers();
 		let (author, member) = mock_author_guild(
 			UserId::new(12345678901234567u64),
 			vec![RoleId::new(98765432109876543u64)],
 		);
 
-		let result = action(&data, &serv, "SomeServer", &author, member.as_ref()).await;
+		let result = action(&mut conn, &serv, "SomeServer", &author, member.as_ref()).await;
 
 		assert_eq!(result, Ok(expected_result));
 		serv["foo"].assert_called_times(calls.0, calls.1, calls.2, calls.3, calls.4);

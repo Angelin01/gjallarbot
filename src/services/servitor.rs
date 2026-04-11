@@ -161,23 +161,10 @@ impl ServitorHandler for HttpServitorController {
 #[cfg(test)]
 pub mod tests {
 	use super::*;
-	use crate::data::BotData;
-	use std::collections::BTreeMap;
 	use std::sync::atomic::{AtomicUsize, Ordering};
 	use std::sync::Arc;
 	use chrono::TimeZone;
 	use tokio::sync::Mutex;
-
-	pub async fn controllers_from_bot_data(
-		data: &BotData,
-	) -> BTreeMap<String, MockServitorController> {
-		data.read()
-			.await
-			.servitor
-			.iter()
-			.map(|(_, server_info)| (server_info.servitor.clone(), MockServitorController::new()))
-			.collect()
-	}
 
 	pub struct MockServitorController {
 		called_start: Arc<AtomicUsize>,
