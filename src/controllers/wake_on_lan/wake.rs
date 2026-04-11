@@ -50,41 +50,26 @@ pub async fn wake<D: DbConnection, S: MagicPacketSender>(
 			)),
 		})?;
 
-	let authorized_users: Vec<WakeOnLanMachineAuthorizedUser> =
-		wake_on_lan_machines_authorized_users::table
-			.filter(wake_on_lan_machines_authorized_users::machine_id.eq(machine.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				WakeError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized users from database"),
-				))
-			})?;
+	let mut authorized = wake_on_lan_machines_authorized_users::table
+		.filter(wake_on_lan_machines_authorized_users::machine_id.eq(machine.id))
+		.filter(wake_on_lan_machines_authorized_users::user_id.eq(author.id.get() as i64))
+		.first::<WakeOnLanMachineAuthorizedUser>(conn)
+		.await
+		.is_ok();
 
-	let authorized_roles: Vec<WakeOnLanMachineAuthorizedRole> =
-		wake_on_lan_machines_authorized_roles::table
-			.filter(wake_on_lan_machines_authorized_roles::machine_id.eq(machine.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				WakeError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
-				))
-			})?;
+	if !authorized {
+		if let Some(m) = member {
+			let role_ids: Vec<i64> = m.roles.iter().map(|r| r.get() as i64).collect();
+			authorized = wake_on_lan_machines_authorized_roles::table
+				.filter(wake_on_lan_machines_authorized_roles::machine_id.eq(machine.id))
+				.filter(wake_on_lan_machines_authorized_roles::role_id.eq_any(role_ids))
+				.first::<WakeOnLanMachineAuthorizedRole>(conn)
+				.await
+				.is_ok();
+		}
+	}
 
-	let user_authorized = authorized_users
-		.iter()
-		.any(|u| UserId::new(u.user_id as u64) == author.id);
-
-	let role_authorized = member.map_or(false, |m| {
-		m.roles.iter().any(|role| {
-			authorized_roles
-				.iter()
-				.any(|r| serenity::all::RoleId::new(r.role_id as u64) == *role)
-		})
-	});
-
-	if !user_authorized && !role_authorized {
+	if !authorized {
 		return Err(WakeError::Unauthorized {
 			user: author.id,
 			machine_name: machine_name.to_string(),
