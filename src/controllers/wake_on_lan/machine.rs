@@ -1,10 +1,7 @@
 use super::MachineError;
 use crate::db::DbConnection;
 use crate::errors::{InvalidMacError, UnexpectedError};
-use crate::models::wake_on_lan::{
-	NewWakeOnLanMachine, WakeOnLanMachine, WakeOnLanMachineAuthorizedRole,
-	WakeOnLanMachineAuthorizedUser,
-};
+use crate::models::wake_on_lan::{NewWakeOnLanMachine, WakeOnLanMachine};
 use crate::schema::{
 	wake_on_lan_machines, wake_on_lan_machines_authorized_roles,
 	wake_on_lan_machines_authorized_users,
@@ -145,37 +142,37 @@ pub async fn describe_machine<D: DbConnection>(
 			)),
 		})?;
 
-	let authorized_users: Vec<WakeOnLanMachineAuthorizedUser> =
-		wake_on_lan_machines_authorized_users::table
-			.filter(wake_on_lan_machines_authorized_users::machine_id.eq(machine.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				DescribeMachineError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized users from database"),
-				))
-			})?;
+	let authorized_users: Vec<i64> = wake_on_lan_machines_authorized_users::table
+		.select(wake_on_lan_machines_authorized_users::user_id)
+		.filter(wake_on_lan_machines_authorized_users::machine_id.eq(machine.id))
+		.load(conn)
+		.await
+		.map_err(|e| {
+			DescribeMachineError::Unexpected(UnexpectedError(
+				anyhow::Error::new(e).context("Failed to query authorized users from database"),
+			))
+		})?;
 
-	let authorized_roles: Vec<WakeOnLanMachineAuthorizedRole> =
-		wake_on_lan_machines_authorized_roles::table
-			.filter(wake_on_lan_machines_authorized_roles::machine_id.eq(machine.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				DescribeMachineError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
-				))
-			})?;
+	let authorized_roles: Vec<i64> = wake_on_lan_machines_authorized_roles::table
+		.select(wake_on_lan_machines_authorized_roles::role_id)
+		.filter(wake_on_lan_machines_authorized_roles::machine_id.eq(machine.id))
+		.load(conn)
+		.await
+		.map_err(|e| {
+			DescribeMachineError::Unexpected(UnexpectedError(
+				anyhow::Error::new(e).context("Failed to query authorized roles from database"),
+			))
+		})?;
 
 	Ok(MachineDescription {
 		machine,
 		authorized_users: authorized_users
 			.into_iter()
-			.map(|u| UserId::new(u.user_id as u64))
+			.map(|u| UserId::new(u as u64))
 			.collect(),
 		authorized_roles: authorized_roles
 			.into_iter()
-			.map(|r| RoleId::new(r.role_id as u64))
+			.map(|r| RoleId::new(r as u64))
 			.collect(),
 	})
 }

@@ -2,9 +2,7 @@ use super::ServerError;
 use crate::controllers::servitor::server::AddServerError::InvalidServitor;
 use crate::db::DbConnection;
 use crate::errors::UnexpectedError;
-use crate::models::servitor::{
-	NewServitorServer, ServitorServer, ServitorServerAuthorizedRole, ServitorServerAuthorizedUser,
-};
+use crate::models::servitor::{NewServitorServer, ServitorServer};
 use crate::schema::{
 	servitor_server_authorized_roles, servitor_server_authorized_users, servitor_servers,
 };
@@ -151,37 +149,37 @@ pub async fn describe_server<D: DbConnection>(
 			)),
 		})?;
 
-	let authorized_users: Vec<ServitorServerAuthorizedUser> =
-		servitor_server_authorized_users::table
-			.filter(servitor_server_authorized_users::server_id.eq(server.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				DescribeServerError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized users from database"),
-				))
-			})?;
+	let authorized_users: Vec<i64> = servitor_server_authorized_users::table
+		.select(servitor_server_authorized_users::user_id)
+		.filter(servitor_server_authorized_users::server_id.eq(server.id))
+		.load(conn)
+		.await
+		.map_err(|e| {
+			DescribeServerError::Unexpected(UnexpectedError(
+				anyhow::Error::new(e).context("Failed to query authorized users from database"),
+			))
+		})?;
 
-	let authorized_roles: Vec<ServitorServerAuthorizedRole> =
-		servitor_server_authorized_roles::table
-			.filter(servitor_server_authorized_roles::server_id.eq(server.id))
-			.load(conn)
-			.await
-			.map_err(|e| {
-				DescribeServerError::Unexpected(UnexpectedError(
-					anyhow::Error::new(e).context("Failed to query authorized roles from database"),
-				))
-			})?;
+	let authorized_roles: Vec<i64> = servitor_server_authorized_roles::table
+		.select(servitor_server_authorized_roles::role_id)
+		.filter(servitor_server_authorized_roles::server_id.eq(server.id))
+		.load(conn)
+		.await
+		.map_err(|e| {
+			DescribeServerError::Unexpected(UnexpectedError(
+				anyhow::Error::new(e).context("Failed to query authorized roles from database"),
+			))
+		})?;
 
 	Ok(ServerDescription {
 		server,
 		authorized_users: authorized_users
 			.into_iter()
-			.map(|u| UserId::new(u.user_id as u64))
+			.map(|u| UserId::new(u as u64))
 			.collect(),
 		authorized_roles: authorized_roles
 			.into_iter()
-			.map(|r| RoleId::new(r.role_id as u64))
+			.map(|r| RoleId::new(r as u64))
 			.collect(),
 	})
 }
