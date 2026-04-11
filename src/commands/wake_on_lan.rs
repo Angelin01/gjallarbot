@@ -6,10 +6,8 @@ use super::DISCORD_MAX_AUTOCOMPLETE_CHOICES;
 use crate::bot::{BotError, Context};
 use crate::db::DbConnection;
 use crate::schema::wake_on_lan_machines;
-use diesel::QueryDsl;
-use diesel::SelectableHelper;
+use diesel::{QueryDsl, TextExpressionMethods};
 use diesel_async::RunQueryDsl;
-use crate::models::wake_on_lan::WakeOnLanMachine;
 
 #[poise::command(
 	slash_command,
@@ -34,13 +32,10 @@ pub async fn wake_on_lan<D: DbConnection>(_: Context<'_, D>) -> Result<(), BotEr
 async fn autocomplete_machine_name<D: DbConnection>(ctx: Context<'_, D>, partial: &str) -> Vec<String> {
 	let mut conn = ctx.data().conn.lock().await;
 	wake_on_lan_machines::table
-		.select(WakeOnLanMachine::as_select())
-		.load(&mut *conn)
+		.select(wake_on_lan_machines::name)
+		.filter(wake_on_lan_machines::name.like(format!("{partial}%")))
+		.limit(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
+		.load::<String>(&mut *conn)
 		.await
 		.unwrap_or_default()
-		.into_iter()
-		.map(|m| m.name)
-		.filter(|name| name.starts_with(partial))
-		.take(DISCORD_MAX_AUTOCOMPLETE_CHOICES)
-		.collect()
 }

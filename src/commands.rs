@@ -18,7 +18,7 @@ pub fn commands<D: DbConnection + 'static>() -> Vec<Command<BotState<D>, BotErro
 	commands
 }
 
-const DISCORD_MAX_AUTOCOMPLETE_CHOICES: usize = 25;
+const DISCORD_MAX_AUTOCOMPLETE_CHOICES: i64 = 25;
 
 async fn reply_no_mentions<'a, D: DbConnection>(ctx: Context<'a, D>, embed: CreateEmbed) -> Result<ReplyHandle<'a>, BotError> {
 	Ok(ctx.send(
