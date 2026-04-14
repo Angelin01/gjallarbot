@@ -8,77 +8,78 @@ on:
 env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
-  PROJECT_NAME: gjalalrbot
+  PROJECT_NAME: gjallarbot
 
 jobs:
-  version:
+  setup:
     runs-on: ubuntu-slim
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      fullImageName: ${{ steps.image_name.outputs.fullImageName }}
     steps:
       - name: Get version from tag
         id: get_version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Get full image name
+        id: image_name
+        run: |
+          fullImageName=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PROJECT_NAME }}
+          echo "fullImageName=${fullImageName,,}" >> $GITHUB_OUTPUT
 
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - TARGET: x86_64-unknown-linux-gnu
-          - TARGET: x86_64-unknown-linux-musl
-          - TARGET: aarch64-unknown-linux-gnu
-          - TARGET: aarch64-unknown-linux-musl
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
 
-    name: Build and Release
-    runs-on: ubuntu-slim
-    needs: version
-    env:
-      TARGET: ${{ matrix.TARGET }}
+    name: Build Binaries (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    needs: setup
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
-      - name: Install Dependencies
-        run: |
-          sudo apt-get install -yqq crossbuild-essential-arm64 musl-tools
-
-          cat > ~/.cargo/config.toml <<EOF
-          [target.aarch64-unknown-linux-gnu]
-          linker = "aarch64-linux-gnu-gcc"
-          [target.aarch64-unknown-linux-musl]
-          linker = "musl-gcc"
-          EOF
       - name: Install rust target
-        run: rustup target add $TARGET
+        run: rustup target add ${{ matrix.target }}
       - name: Set version
         run: |
-          tagName=${{ needs.version.outputs.version }}
-          sed -i 's;version\s*=\s*"0.0.0";version = "'"${tagName}"'";' Cargo.toml
+          sed -i 's;version\s*=\s*"0.0.0";version = "${{ needs.setup.outputs.version }}";' Cargo.toml
           cargo update "$PROJECT_NAME"
       - name: Build
-        run: cargo build --locked --release --target $TARGET
+        run: cargo build --locked --release --target ${{ matrix.target }}
       - name: Package
         run: |
-          tagName=${{ needs.version.outputs.version }}
-          executableName="$PROJECT_NAME"
           mkdir -p dist
-          mv target/$TARGET/release/$executableName dist/${executableName}-v${tagName}-${TARGET}
+          mv target/${{ matrix.target }}/release/$PROJECT_NAME \
+            dist/${PROJECT_NAME}-v${{ needs.setup.outputs.version }}-${{ matrix.target }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: binary-${{ matrix.TARGET }}
+          name: binary-${{ matrix.target }}
           path: dist/
           if-no-files-found: error
 
   build-containers:
-    runs-on: ubuntu-slim
-    needs: version
+    name: Build Container (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    needs: setup
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4.0.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
@@ -90,24 +91,70 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker images
+      - name: Build and push by digest
+        id: push
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ needs.version.outputs.version }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}:${{ needs.version.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          build-args: VERSION=${{ needs.setup.outputs.version }}
+          outputs: type=image,name=${{ needs.setup.outputs.fullImageName }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        id: digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.push.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+          echo digestName="digest-$(echo "${{ matrix.platform }}" | awk -F/ '{print $2}')" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ steps.digest.outputs.digestName }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  merge-manifests:
+    name: Merge Container Manifests
+    runs-on: ubuntu-slim
+    needs: [build-containers, setup]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: digest-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Create and push manifest
+        # language="shell script"
+        run: |
+          images=""
+          for digest in /tmp/digests/*; do
+            images="$images ${{ needs.setup.outputs.fullImageName }}@sha256:$(basename $digest)"
+          done
+          docker buildx imagetools create \
+            --tag ${{ needs.setup.outputs.fullImageName }}:latest \
+            --tag ${{ needs.setup.outputs.fullImageName }}:${{ needs.setup.outputs.version }} \
+            $images
 
   release:
+    name: Release
     permissions:
       contents: write
-    needs: [build, build-containers, version]
+    needs: [build, merge-manifests, setup]
     runs-on: ubuntu-slim
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -122,10 +169,10 @@ jobs:
           files: ./dist/*
           # language=markdown
           body: |
-            # Release v${{ needs.version.outputs.version }}
+            # Release v${{ needs.setup.outputs.version }}
             
             Container images available at:
             ```
-            ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.PROJECT_NAME }}:${{ needs.version.outputs.version }}
+            ${{ needs.setup.outputs.fullImageName }}:latest
+            ${{ needs.setup.outputs.fullImageName }}:${{ needs.version.outputs.version }}
             ```
