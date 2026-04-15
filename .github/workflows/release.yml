@@ -174,5 +174,5 @@ jobs:
             Container images available at:
             ```
             ${{ needs.setup.outputs.fullImageName }}:latest
-            ${{ needs.setup.outputs.fullImageName }}:${{ needs.version.outputs.version }}
+            ${{ needs.setup.outputs.fullImageName }}:${{ needs.setup.outputs.version }}
             ```
